@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export default function Dashboard() {
   return (
     <div className="space-y-6">
@@ -45,12 +47,12 @@ export default function Dashboard() {
           Quick Actions
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button className="btn-primary">
+          <Link to="/pos" className="btn-primary">
             New Sale
-          </button>
-          <button className="btn-secondary">
+          </Link>
+          <Link to="/products" className="btn-secondary">
             Add Product
-          </button>
+          </Link>
           <button className="btn-secondary">
             Add Customer
           </button>

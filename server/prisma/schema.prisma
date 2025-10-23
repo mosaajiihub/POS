@@ -28,6 +28,13 @@ model User {
   // Relations
   sales           Sale[]
   auditLogs       AuditLog[]
+  payments        Payment[]
+  verifiedPayments Payment[] @relation("PaymentVerifier")
+  rejectedPayments Payment[] @relation("PaymentRejector")
+  paymentHistory  PaymentHistory[]
+  userRoles       UserRole_Assignment[]
+  createdRoles    Role[]    @relation("RoleCreator")
+  updatedRoles    Role[]    @relation("RoleUpdater")
   
   @@map("users")
 }
@@ -262,6 +269,132 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model RateLimit {
+  id        String    @id @default(cuid())
+  key       String    @unique
+  count     Int       @default(1)
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  
+  @@map("rate_limits")
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  userId          String        @map("user_id")
+  amount          Decimal
+  currency        String        @default("USD")
+  paymentMethod   String        @map("payment_method")
+  transactionId   String?       @unique @map("transaction_id")
+  status          PaymentStatus @default(PENDING)
+  description     String?
+  metadata        Json?
+  paidAt          DateTime?     @map("paid_at")
+  verifiedAt      DateTime?     @map("verified_at")
+  verifiedBy      String?       @map("verified_by")
+  rejectedAt      DateTime?     @map("rejected_at")
+  rejectedBy      String?       @map("rejected_by")
+  rejectionReason String?       @map("rejection_reason")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  
+  // Relations
+  user            User          @relation(fields: [userId], references: [id])
+  verifier        User?         @relation("PaymentVerifier", fields: [verifiedBy], references: [id])
+  rejector        User?         @relation("PaymentRejector", fields: [rejectedBy], references: [id])
+  
+  @@map("payments")
+}
+
+model PaymentHistory {
+  id          String    @id @default(cuid())
+  paymentId   String    @map("payment_id")
+  action      String
+  oldStatus   String?   @map("old_status")
+  newStatus   String    @map("new_status")
+  performedBy String    @map("performed_by")
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  
+  // Relations
+  payment     Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  performer   User      @relation(fields: [performedBy], references: [id])
+  
+  @@map("payment_history")
+}
+
+model Role {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  displayName String
+  description String?
+  isSystem    Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String
+  updatedBy   String?
+  
+  // Relations
+  creator     User      @relation("RoleCreator", fields: [createdBy], references: [id])
+  updater     User?     @relation("RoleUpdater", fields: [updatedBy], references: [id])
+  permissions RolePermission[]
+  userRoles   UserRole_Assignment[]
+  
+  @@map("roles")
+}
+
+model Permission {
+  id          String    @id @default(cuid())
+  resource    String
+  action      String
+  displayName String
+  description String?
+  isSystem    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  rolePermissions RolePermission[]
+  
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  granted      Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  
+  // Relations
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole_Assignment {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  assignedAt DateTime @default(now())
+  assignedBy String?
+  isActive  Boolean  @default(true)
+  
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, roleId])
+  @@map("user_role_assignments")
+}
+
 // Enums
 enum UserRole {
   ADMIN
@@ -315,3 +448,4 @@ enum MovementType {
   RETURN
   DAMAGE
 }
+

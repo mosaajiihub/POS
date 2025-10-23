@@ -9,6 +9,19 @@ import { errorHandler } from './middleware/errorHandler'
 import { logger } from './utils/logger'
 import { connectRedis } from './config/redis'
 import { connectDatabase } from './config/database'
+import authRoutes from './routes/auth'
+import otpRoutes from './routes/otp'
+import paymentRoutes from './routes/payment'
+import roleRoutes from './routes/roles'
+import userRoutes from './routes/users'
+import productRoutes from './routes/products'
+import categoryRoutes from './routes/categories'
+import supplierRoutes from './routes/suppliers'
+import customerRoutes from './routes/customers'
+import stockRoutes from './routes/stock'
+import analyticsRoutes from './routes/analytics'
+import expenseRoutes from './routes/expenses'
+import financialDashboardRoutes from './routes/financial-dashboard'
 
 // Load environment variables
 dotenv.config()
@@ -48,8 +61,23 @@ app.get('/health', (req, res) => {
   })
 })
 
-// API routes will be added in future tasks
-app.use('/api', (req, res) => {
+// API routes
+app.use('/api/auth', authRoutes)
+app.use('/api/otp', otpRoutes)
+app.use('/api/payments', paymentRoutes)
+app.use('/api/roles', roleRoutes)
+app.use('/api/users', userRoutes)
+app.use('/api/products', productRoutes)
+app.use('/api/categories', categoryRoutes)
+app.use('/api/suppliers', supplierRoutes)
+app.use('/api/customers', customerRoutes)
+app.use('/api/stock', stockRoutes)
+app.use('/api/analytics', analyticsRoutes)
+app.use('/api/expenses', expenseRoutes)
+app.use('/api/financial-dashboard', financialDashboardRoutes)
+
+// Catch-all for undefined API routes
+app.use('/api/*', (req, res) => {
   res.status(404).json({ error: 'API endpoint not found' })
 })
 
