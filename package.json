@@ -1,0 +1,26 @@
+{
+  "name": "mosaajii-pos",
+  "version": "1.0.0",
+  "description": "Comprehensive Point of Sale system with admin panel and OTP-based access control",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "client:dev": "cd client && npm run dev",
+    "client:build": "cd client && npm run build",
+    "server:dev": "cd server && npm run dev",
+    "server:start": "cd server && npm start",
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "test": "npm run test:client && npm run test:server",
+    "test:client": "cd client && npm test -- --run",
+    "test:server": "cd server && npm test",
+    "lint": "npm run lint:client && npm run lint:server",
+    "lint:client": "cd client && npm run lint",
+    "lint:server": "cd server && npm run lint"
+  },
+  "keywords": ["pos", "point-of-sale", "inventory", "react", "typescript", "pwa"],
+  "author": "Abdihakim Abdirahman",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

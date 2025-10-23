@@ -1,0 +1,317 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  firstName       String
+  lastName        String
+  passwordHash    String
+  role            UserRole  @default(CASHIER)
+  status          UserStatus @default(PENDING)
+  paymentVerified Boolean   @default(false)
+  otpCode         String?
+  otpExpiry       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastLogin       DateTime?
+  
+  // Relations
+  sales           Sale[]
+  auditLogs       AuditLog[]
+  
+  @@map("users")
+}
+
+model Customer {
+  id            String    @id @default(cuid())
+  firstName     String
+  lastName      String
+  email         String?   @unique
+  phone         String?
+  address       String?
+  city          String?
+  postalCode    String?
+  loyaltyPoints Int       @default(0)
+  creditLimit   Decimal   @default(0)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  sales         Sale[]
+  invoices      Invoice[]
+  
+  @@map("customers")
+}
+
+model Supplier {
+  id            String    @id @default(cuid())
+  name          String
+  contactPerson String?
+  email         String?   @unique
+  phone         String?
+  address       String?
+  city          String?
+  postalCode    String?
+  paymentTerms  String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  products      Product[]
+  purchaseOrders PurchaseOrder[]
+  
+  @@map("suppliers")
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  products    Product[]
+  
+  @@map("categories")
+}
+
+model Product {
+  id            String      @id @default(cuid())
+  name          String
+  description   String?
+  sku           String      @unique
+  barcode       String?     @unique
+  costPrice     Decimal
+  sellingPrice  Decimal
+  wholesalePrice Decimal?
+  stockLevel    Int         @default(0)
+  minStockLevel Int         @default(0)
+  taxRate       Decimal     @default(0)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  // Relations
+  categoryId    String
+  category      Category    @relation(fields: [categoryId], references: [id])
+  supplierId    String
+  supplier      Supplier    @relation(fields: [supplierId], references: [id])
+  
+  saleItems     SaleItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  stockMovements StockMovement[]
+  
+  @@map("products")
+}
+
+model Sale {
+  id              String      @id @default(cuid())
+  transactionNumber String    @unique
+  subtotal        Decimal
+  taxAmount       Decimal
+  discountAmount  Decimal     @default(0)
+  totalAmount     Decimal
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus @default(COMPLETED)
+  receiptGenerated Boolean    @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  // Relations
+  customerId      String?
+  customer        Customer?   @relation(fields: [customerId], references: [id])
+  cashierId       String
+  cashier         User        @relation(fields: [cashierId], references: [id])
+  
+  items           SaleItem[]
+  
+  @@map("sales")
+}
+
+model SaleItem {
+  id          String    @id @default(cuid())
+  quantity    Int
+  unitPrice   Decimal
+  totalPrice  Decimal
+  createdAt   DateTime  @default(now())
+  
+  // Relations
+  saleId      String
+  sale        Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  
+  @@map("sale_items")
+}
+
+model PurchaseOrder {
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique
+  status        OrderStatus @default(PENDING)
+  totalAmount   Decimal
+  orderDate     DateTime    @default(now())
+  expectedDate  DateTime?
+  receivedDate  DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  // Relations
+  supplierId    String
+  supplier      Supplier    @relation(fields: [supplierId], references: [id])
+  
+  items         PurchaseOrderItem[]
+  
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id            String        @id @default(cuid())
+  quantity      Int
+  unitCost      Decimal
+  totalCost     Decimal
+  receivedQty   Int           @default(0)
+  createdAt     DateTime      @default(now())
+  
+  // Relations
+  purchaseOrderId String
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product       @relation(fields: [productId], references: [id])
+  
+  @@map("purchase_order_items")
+}
+
+model StockMovement {
+  id            String        @id @default(cuid())
+  type          MovementType
+  quantity      Int
+  previousStock Int
+  newStock      Int
+  reason        String?
+  createdAt     DateTime      @default(now())
+  
+  // Relations
+  productId     String
+  product       Product       @relation(fields: [productId], references: [id])
+  
+  @@map("stock_movements")
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique
+  status        InvoiceStatus @default(DRAFT)
+  subtotal      Decimal
+  taxAmount     Decimal
+  totalAmount   Decimal
+  dueDate       DateTime
+  paidDate      DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  // Relations
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  
+  @@map("invoices")
+}
+
+model Expense {
+  id            String        @id @default(cuid())
+  description   String
+  amount        Decimal
+  category      String
+  vendor        String?
+  receiptUrl    String?
+  expenseDate   DateTime
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  @@map("expenses")
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  action      String
+  tableName   String
+  recordId    String
+  oldValues   Json?
+  newValues   Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+  
+  // Relations
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  
+  @@map("audit_logs")
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  MANAGER
+  CASHIER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+  INACTIVE
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  DIGITAL
+  CREDIT
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum MovementType {
+  SALE
+  PURCHASE
+  ADJUSTMENT
+  RETURN
+  DAMAGE
+}
