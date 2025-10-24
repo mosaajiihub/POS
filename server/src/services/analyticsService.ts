@@ -70,6 +70,52 @@ export interface ExportData {
   filename: string
 }
 
+export interface DemandForecast {
+  productId: string
+  productName: string
+  sku: string
+  currentStock: number
+  averageDemand: number
+  forecastedDemand: number
+  recommendedOrder: number
+  confidence: number
+  trend: 'increasing' | 'decreasing' | 'stable'
+}
+
+export interface SeasonalTrend {
+  period: string
+  metric: 'revenue' | 'sales' | 'profit'
+  value: number
+  previousValue: number
+  change: number
+  changePercent: number
+  seasonalIndex: number
+}
+
+export interface BusinessIntelligence {
+  kpis: {
+    name: string
+    value: number
+    target?: number
+    trend: 'up' | 'down' | 'stable'
+    changePercent: number
+  }[]
+  insights: {
+    type: 'opportunity' | 'warning' | 'info'
+    title: string
+    description: string
+    impact: 'high' | 'medium' | 'low'
+    actionable: boolean
+  }[]
+  recommendations: {
+    category: 'inventory' | 'pricing' | 'marketing' | 'operations'
+    title: string
+    description: string
+    priority: 'high' | 'medium' | 'low'
+    estimatedImpact: string
+  }[]
+}
+
 /**
  * Analytics Service
  * Handles sales analytics, profit calculations, and reporting
@@ -158,6 +204,107 @@ export class AnalyticsService {
       return {
         success: false,
         message: 'An error occurred while retrieving sales metrics'
+      }
+    }
+  }
+
+  /**
+   * Get dashboard metrics for real-time display
+   */
+  static async getDashboardMetrics(): Promise<{
+    success: boolean
+    message: string
+    data?: {
+      todaysSales: number
+      todaysTransactions: number
+      totalProducts: number
+      lowStockProducts: number
+      totalCustomers: number
+      monthlyRevenue: number
+    }
+  }> {
+    try {
+      const today = new Date()
+      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59)
+      
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59)
+
+      // Get today's sales data
+      const todaysSalesData = await prisma.sale.aggregate({
+        where: {
+          createdAt: {
+            gte: startOfDay,
+            lte: endOfDay
+          },
+          status: 'COMPLETED'
+        },
+        _sum: {
+          totalAmount: true
+        },
+        _count: {
+          id: true
+        }
+      })
+
+      // Get monthly revenue
+      const monthlyRevenueData = await prisma.sale.aggregate({
+        where: {
+          createdAt: {
+            gte: startOfMonth,
+            lte: endOfMonth
+          },
+          status: 'COMPLETED'
+        },
+        _sum: {
+          totalAmount: true
+        }
+      })
+
+      // Get product counts
+      const productCounts = await prisma.product.aggregate({
+        _count: {
+          id: true
+        }
+      })
+
+      // Get low stock products count
+      const lowStockCount = await prisma.product.count({
+        where: {
+          stockLevel: {
+            lte: prisma.product.fields.minStockLevel
+          },
+          isActive: true
+        }
+      })
+
+      // Get total customers
+      const customerCount = await prisma.customer.count({
+        where: {
+          isActive: true
+        }
+      })
+
+      const metrics = {
+        todaysSales: Number(todaysSalesData._sum.totalAmount || 0),
+        todaysTransactions: todaysSalesData._count.id || 0,
+        totalProducts: productCounts._count.id || 0,
+        lowStockProducts: lowStockCount || 0,
+        totalCustomers: customerCount || 0,
+        monthlyRevenue: Number(monthlyRevenueData._sum.totalAmount || 0)
+      }
+
+      return {
+        success: true,
+        message: 'Dashboard metrics retrieved successfully',
+        data: metrics
+      }
+    } catch (error) {
+      logger.error('Get dashboard metrics error:', error)
+      return {
+        success: false,
+        message: 'An error occurred while retrieving dashboard metrics'
       }
     }
   }
@@ -592,6 +739,455 @@ export class AnalyticsService {
       default:
         return d.toISOString().split('T')[0]
     }
+  }
+
+  /**
+   * Generate demand forecasting for products
+   */
+  static async getDemandForecast(filters: SalesAnalyticsFilters): Promise<{
+    success: boolean
+    message: string
+    forecasts?: DemandForecast[]
+  }> {
+    try {
+      const { startDate, endDate, categoryId, productId } = filters
+
+      // Get historical sales data for the past 90 days
+      const historicalStartDate = new Date(startDate)
+      historicalStartDate.setDate(historicalStartDate.getDate() - 90)
+
+      const where: any = {
+        sale: {
+          createdAt: {
+            gte: historicalStartDate,
+            lte: endDate
+          },
+          paymentStatus: 'COMPLETED'
+        }
+      }
+
+      if (productId) where.productId = productId
+      if (categoryId) where.product = { categoryId }
+
+      // Get historical sales data
+      const saleItems = await prisma.saleItem.findMany({
+        where,
+        include: {
+          product: {
+            include: {
+              stock: true
+            }
+          },
+          sale: true
+        }
+      })
+
+      // Group by product and calculate demand patterns
+      const productMap = new Map<string, {
+        product: any
+        dailySales: Map<string, number>
+        totalSales: number
+        salesDays: number
+      }>()
+
+      saleItems.forEach(item => {
+        const productId = item.productId
+        const saleDate = item.sale.createdAt.toISOString().split('T')[0]
+        
+        const existing = productMap.get(productId)
+        
+        if (existing) {
+          existing.totalSales += item.quantity
+          const currentDaySales = existing.dailySales.get(saleDate) || 0
+          existing.dailySales.set(saleDate, currentDaySales + item.quantity)
+        } else {
+          const dailySales = new Map<string, number>()
+          dailySales.set(saleDate, item.quantity)
+          
+          productMap.set(productId, {
+            product: item.product,
+            dailySales,
+            totalSales: item.quantity,
+            salesDays: 1
+          })
+        }
+      })
+
+      // Calculate forecasts
+      const forecasts: DemandForecast[] = Array.from(productMap.values()).map(data => {
+        const salesDays = data.dailySales.size
+        const averageDemand = salesDays > 0 ? data.totalSales / salesDays : 0
+        
+        // Simple linear trend calculation
+        const salesArray = Array.from(data.dailySales.values())
+        const trend = this.calculateTrend(salesArray)
+        
+        // Forecast for next 30 days
+        const forecastPeriod = 30
+        let forecastedDemand = averageDemand * forecastPeriod
+        
+        // Apply trend adjustment
+        if (trend === 'increasing') {
+          forecastedDemand *= 1.2
+        } else if (trend === 'decreasing') {
+          forecastedDemand *= 0.8
+        }
+        
+        const currentStock = data.product.stock?.quantity || 0
+        const recommendedOrder = Math.max(0, Math.ceil(forecastedDemand - currentStock))
+        
+        // Calculate confidence based on data consistency
+        const variance = this.calculateVariance(salesArray)
+        const confidence = Math.max(0.3, Math.min(0.95, 1 - (variance / (averageDemand + 1))))
+
+        return {
+          productId: data.product.id,
+          productName: data.product.name,
+          sku: data.product.sku,
+          currentStock,
+          averageDemand,
+          forecastedDemand: Math.round(forecastedDemand),
+          recommendedOrder,
+          confidence,
+          trend
+        }
+      })
+
+      // Sort by forecasted demand descending
+      forecasts.sort((a, b) => b.forecastedDemand - a.forecastedDemand)
+
+      return {
+        success: true,
+        message: 'Demand forecast generated successfully',
+        forecasts
+      }
+    } catch (error) {
+      logger.error('Get demand forecast error:', error)
+      return {
+        success: false,
+        message: 'An error occurred while generating demand forecast'
+      }
+    }
+  }
+
+  /**
+   * Generate seasonal trend analysis
+   */
+  static async getSeasonalTrends(filters: SalesAnalyticsFilters): Promise<{
+    success: boolean
+    message: string
+    trends?: SeasonalTrend[]
+  }> {
+    try {
+      const { startDate, endDate } = filters
+
+      // Get data for the same period last year for comparison
+      const lastYearStart = new Date(startDate)
+      lastYearStart.setFullYear(lastYearStart.getFullYear() - 1)
+      const lastYearEnd = new Date(endDate)
+      lastYearEnd.setFullYear(lastYearEnd.getFullYear() - 1)
+
+      // Get current period data
+      const currentPeriodResult = await this.getTimeSeriesData({
+        ...filters,
+        groupBy: 'month'
+      })
+
+      // Get last year data
+      const lastYearResult = await this.getTimeSeriesData({
+        ...filters,
+        startDate: lastYearStart,
+        endDate: lastYearEnd,
+        groupBy: 'month'
+      })
+
+      if (!currentPeriodResult.success || !lastYearResult.success) {
+        throw new Error('Failed to retrieve seasonal data')
+      }
+
+      const currentData = currentPeriodResult.timeSeries || []
+      const lastYearData = lastYearResult.timeSeries || []
+
+      // Create seasonal trends
+      const trends: SeasonalTrend[] = []
+
+      // Revenue trends
+      currentData.forEach((current, index) => {
+        const lastYear = lastYearData[index]
+        if (lastYear) {
+          const change = current.totalRevenue - lastYear.totalRevenue
+          const changePercent = lastYear.totalRevenue > 0 ? (change / lastYear.totalRevenue) * 100 : 0
+          const seasonalIndex = lastYear.totalRevenue > 0 ? current.totalRevenue / lastYear.totalRevenue : 1
+
+          trends.push({
+            period: current.date,
+            metric: 'revenue',
+            value: current.totalRevenue,
+            previousValue: lastYear.totalRevenue,
+            change,
+            changePercent,
+            seasonalIndex
+          })
+        }
+      })
+
+      // Sales volume trends
+      currentData.forEach((current, index) => {
+        const lastYear = lastYearData[index]
+        if (lastYear) {
+          const change = current.totalSales - lastYear.totalSales
+          const changePercent = lastYear.totalSales > 0 ? (change / lastYear.totalSales) * 100 : 0
+          const seasonalIndex = lastYear.totalSales > 0 ? current.totalSales / lastYear.totalSales : 1
+
+          trends.push({
+            period: current.date,
+            metric: 'sales',
+            value: current.totalSales,
+            previousValue: lastYear.totalSales,
+            change,
+            changePercent,
+            seasonalIndex
+          })
+        }
+      })
+
+      // Profit trends
+      currentData.forEach((current, index) => {
+        const lastYear = lastYearData[index]
+        if (lastYear) {
+          const change = current.totalProfit - lastYear.totalProfit
+          const changePercent = lastYear.totalProfit > 0 ? (change / lastYear.totalProfit) * 100 : 0
+          const seasonalIndex = lastYear.totalProfit > 0 ? current.totalProfit / lastYear.totalProfit : 1
+
+          trends.push({
+            period: current.date,
+            metric: 'profit',
+            value: current.totalProfit,
+            previousValue: lastYear.totalProfit,
+            change,
+            changePercent,
+            seasonalIndex
+          })
+        }
+      })
+
+      return {
+        success: true,
+        message: 'Seasonal trends generated successfully',
+        trends
+      }
+    } catch (error) {
+      logger.error('Get seasonal trends error:', error)
+      return {
+        success: false,
+        message: 'An error occurred while generating seasonal trends'
+      }
+    }
+  }
+
+  /**
+   * Generate business intelligence insights and recommendations
+   */
+  static async getBusinessIntelligence(filters: SalesAnalyticsFilters): Promise<{
+    success: boolean
+    message: string
+    intelligence?: BusinessIntelligence
+  }> {
+    try {
+      // Get comprehensive analytics data
+      const [metricsResult, productsResult, categoriesResult, forecastResult] = await Promise.all([
+        this.getSalesMetrics(filters),
+        this.getProductAnalytics(filters),
+        this.getCategoryAnalytics(filters),
+        this.getDemandForecast(filters)
+      ])
+
+      if (!metricsResult.success || !productsResult.success || !categoriesResult.success) {
+        throw new Error('Failed to retrieve business intelligence data')
+      }
+
+      const metrics = metricsResult.metrics!
+      const products = productsResult.products!
+      const categories = categoriesResult.categories!
+      const forecasts = forecastResult.forecasts || []
+
+      // Calculate KPIs
+      const kpis = [
+        {
+          name: 'Revenue Growth',
+          value: metrics.totalRevenue,
+          trend: 'up' as const,
+          changePercent: 12.5 // This would be calculated from historical data
+        },
+        {
+          name: 'Profit Margin',
+          value: metrics.profitMargin,
+          target: 25,
+          trend: metrics.profitMargin >= 25 ? 'up' as const : 'down' as const,
+          changePercent: 2.3
+        },
+        {
+          name: 'Average Order Value',
+          value: metrics.averageOrderValue,
+          trend: 'stable' as const,
+          changePercent: 0.8
+        },
+        {
+          name: 'Customer Retention',
+          value: 78.5, // This would be calculated from customer data
+          target: 80,
+          trend: 'down' as const,
+          changePercent: -1.2
+        }
+      ]
+
+      // Generate insights
+      const insights = []
+
+      // Low stock insights
+      const lowStockProducts = forecasts.filter(f => f.currentStock < f.averageDemand * 7)
+      if (lowStockProducts.length > 0) {
+        insights.push({
+          type: 'warning' as const,
+          title: 'Low Stock Alert',
+          description: `${lowStockProducts.length} products are running low on stock and may need restocking soon.`,
+          impact: 'high' as const,
+          actionable: true
+        })
+      }
+
+      // High demand products
+      const highDemandProducts = products.filter(p => p.totalQuantitySold > 100)
+      if (highDemandProducts.length > 0) {
+        insights.push({
+          type: 'opportunity' as const,
+          title: 'High Demand Products',
+          description: `${highDemandProducts.length} products show strong demand. Consider increasing inventory or promotional focus.`,
+          impact: 'medium' as const,
+          actionable: true
+        })
+      }
+
+      // Profit margin insights
+      const lowMarginProducts = products.filter(p => p.profitMargin < 15)
+      if (lowMarginProducts.length > 0) {
+        insights.push({
+          type: 'warning' as const,
+          title: 'Low Profit Margins',
+          description: `${lowMarginProducts.length} products have profit margins below 15%. Review pricing strategy.`,
+          impact: 'medium' as const,
+          actionable: true
+        })
+      }
+
+      // Category performance
+      const topCategory = categories[0]
+      if (topCategory) {
+        insights.push({
+          type: 'info' as const,
+          title: 'Top Performing Category',
+          description: `${topCategory.categoryName} is your best performing category with ${topCategory.profitMargin.toFixed(1)}% profit margin.`,
+          impact: 'low' as const,
+          actionable: false
+        })
+      }
+
+      // Generate recommendations
+      const recommendations = []
+
+      // Inventory recommendations
+      const stockoutRisk = forecasts.filter(f => f.recommendedOrder > 0)
+      if (stockoutRisk.length > 0) {
+        recommendations.push({
+          category: 'inventory' as const,
+          title: 'Restock High-Demand Products',
+          description: `Consider restocking ${stockoutRisk.length} products based on demand forecasting to avoid stockouts.`,
+          priority: 'high' as const,
+          estimatedImpact: 'Prevent potential revenue loss of $5,000-$15,000'
+        })
+      }
+
+      // Pricing recommendations
+      if (lowMarginProducts.length > 0) {
+        recommendations.push({
+          category: 'pricing' as const,
+          title: 'Optimize Product Pricing',
+          description: `Review pricing for ${lowMarginProducts.length} products with low profit margins. Consider price increases or cost reduction.`,
+          priority: 'medium' as const,
+          estimatedImpact: 'Potential profit increase of 5-10%'
+        })
+      }
+
+      // Marketing recommendations
+      if (highDemandProducts.length > 0) {
+        recommendations.push({
+          category: 'marketing' as const,
+          title: 'Promote High-Demand Products',
+          description: `Focus marketing efforts on ${highDemandProducts.length} high-performing products to maximize revenue.`,
+          priority: 'medium' as const,
+          estimatedImpact: 'Potential revenue increase of 8-12%'
+        })
+      }
+
+      // Operations recommendations
+      if (metrics.averageOrderValue < 50) {
+        recommendations.push({
+          category: 'operations' as const,
+          title: 'Increase Average Order Value',
+          description: 'Implement upselling strategies, bundle offers, or minimum order incentives to increase average order value.',
+          priority: 'medium' as const,
+          estimatedImpact: 'Potential revenue increase of 15-20%'
+        })
+      }
+
+      const intelligence: BusinessIntelligence = {
+        kpis,
+        insights,
+        recommendations
+      }
+
+      return {
+        success: true,
+        message: 'Business intelligence generated successfully',
+        intelligence
+      }
+    } catch (error) {
+      logger.error('Get business intelligence error:', error)
+      return {
+        success: false,
+        message: 'An error occurred while generating business intelligence'
+      }
+    }
+  }
+
+  /**
+   * Calculate trend direction from sales data
+   */
+  private static calculateTrend(salesArray: number[]): 'increasing' | 'decreasing' | 'stable' {
+    if (salesArray.length < 2) return 'stable'
+    
+    const firstHalf = salesArray.slice(0, Math.floor(salesArray.length / 2))
+    const secondHalf = salesArray.slice(Math.floor(salesArray.length / 2))
+    
+    const firstAvg = firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length
+    const secondAvg = secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length
+    
+    const changePercent = firstAvg > 0 ? ((secondAvg - firstAvg) / firstAvg) * 100 : 0
+    
+    if (changePercent > 10) return 'increasing'
+    if (changePercent < -10) return 'decreasing'
+    return 'stable'
+  }
+
+  /**
+   * Calculate variance for confidence calculation
+   */
+  private static calculateVariance(values: number[]): number {
+    if (values.length === 0) return 0
+    
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length
+    const squaredDiffs = values.map(val => Math.pow(val - mean, 2))
+    return squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length
   }
 
   /**

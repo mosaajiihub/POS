@@ -7,7 +7,10 @@ import {
   TimeSeriesData, 
   ProfitAnalysis,
   AnalyticsFilters,
-  ExportRequest
+  ExportRequest,
+  DemandForecast,
+  SeasonalTrend,
+  BusinessIntelligence
 } from '../services/analyticsService'
 
 interface AnalyticsState {
@@ -17,6 +20,9 @@ interface AnalyticsState {
   categoryAnalytics: CategoryAnalytics[]
   timeSeriesData: TimeSeriesData[]
   profitAnalysis: ProfitAnalysis | null
+  demandForecasts: DemandForecast[]
+  seasonalTrends: SeasonalTrend[]
+  businessIntelligence: BusinessIntelligence | null
 
   // Loading states
   isLoadingMetrics: boolean
@@ -24,6 +30,9 @@ interface AnalyticsState {
   isLoadingCategories: boolean
   isLoadingTimeSeries: boolean
   isLoadingProfitAnalysis: boolean
+  isLoadingForecasts: boolean
+  isLoadingTrends: boolean
+  isLoadingIntelligence: boolean
   isExporting: boolean
 
   // Error states
@@ -35,6 +44,9 @@ interface AnalyticsState {
   getCategoryAnalytics: (filters: AnalyticsFilters) => Promise<void>
   getTimeSeriesData: (filters: AnalyticsFilters) => Promise<void>
   getProfitAnalysis: (filters: AnalyticsFilters) => Promise<void>
+  getDemandForecasts: (filters: AnalyticsFilters) => Promise<void>
+  getSeasonalTrends: (filters: AnalyticsFilters) => Promise<void>
+  getBusinessIntelligence: (filters: AnalyticsFilters) => Promise<void>
   exportData: (request: ExportRequest) => Promise<void>
   clearError: () => void
   reset: () => void
@@ -47,11 +59,17 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   categoryAnalytics: [],
   timeSeriesData: [],
   profitAnalysis: null,
+  demandForecasts: [],
+  seasonalTrends: [],
+  businessIntelligence: null,
   isLoadingMetrics: false,
   isLoadingProducts: false,
   isLoadingCategories: false,
   isLoadingTimeSeries: false,
   isLoadingProfitAnalysis: false,
+  isLoadingForecasts: false,
+  isLoadingTrends: false,
+  isLoadingIntelligence: false,
   isExporting: false,
   error: null,
 
@@ -181,6 +199,81 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     }
   },
 
+  getDemandForecasts: async (filters: AnalyticsFilters) => {
+    set({ isLoadingForecasts: true, error: null })
+    
+    try {
+      const result = await AnalyticsService.getDemandForecast(filters)
+      
+      if (result.success && result.forecasts) {
+        set({ 
+          demandForecasts: result.forecasts,
+          isLoadingForecasts: false 
+        })
+      } else {
+        set({ 
+          error: result.message,
+          isLoadingForecasts: false 
+        })
+      }
+    } catch (error) {
+      set({ 
+        error: 'Failed to load demand forecasts',
+        isLoadingForecasts: false 
+      })
+    }
+  },
+
+  getSeasonalTrends: async (filters: AnalyticsFilters) => {
+    set({ isLoadingTrends: true, error: null })
+    
+    try {
+      const result = await AnalyticsService.getSeasonalTrends(filters)
+      
+      if (result.success && result.trends) {
+        set({ 
+          seasonalTrends: result.trends,
+          isLoadingTrends: false 
+        })
+      } else {
+        set({ 
+          error: result.message,
+          isLoadingTrends: false 
+        })
+      }
+    } catch (error) {
+      set({ 
+        error: 'Failed to load seasonal trends',
+        isLoadingTrends: false 
+      })
+    }
+  },
+
+  getBusinessIntelligence: async (filters: AnalyticsFilters) => {
+    set({ isLoadingIntelligence: true, error: null })
+    
+    try {
+      const result = await AnalyticsService.getBusinessIntelligence(filters)
+      
+      if (result.success && result.intelligence) {
+        set({ 
+          businessIntelligence: result.intelligence,
+          isLoadingIntelligence: false 
+        })
+      } else {
+        set({ 
+          error: result.message,
+          isLoadingIntelligence: false 
+        })
+      }
+    } catch (error) {
+      set({ 
+        error: 'Failed to load business intelligence',
+        isLoadingIntelligence: false 
+      })
+    }
+  },
+
   exportData: async (request: ExportRequest) => {
     set({ isExporting: true, error: null })
     
@@ -217,11 +310,17 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       categoryAnalytics: [],
       timeSeriesData: [],
       profitAnalysis: null,
+      demandForecasts: [],
+      seasonalTrends: [],
+      businessIntelligence: null,
       isLoadingMetrics: false,
       isLoadingProducts: false,
       isLoadingCategories: false,
       isLoadingTimeSeries: false,
       isLoadingProfitAnalysis: false,
+      isLoadingForecasts: false,
+      isLoadingTrends: false,
+      isLoadingIntelligence: false,
       isExporting: false,
       error: null
     })

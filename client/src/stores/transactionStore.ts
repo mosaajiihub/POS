@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { CartItem, PaymentMethod } from '../pages/POS'
+import { transactionApi, stockApi } from '../services/apiService'
 
 export interface Transaction {
   id: string
@@ -371,20 +372,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
         quantity: item.quantity
       }))
 
-      // In a real app, this would call the stock service API
-      const response = await fetch('/api/stock/process-sale', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ saleItems })
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to update inventory')
-      }
-
+      await stockApi.processSale(saleItems)
       console.log('Inventory updated successfully after sale')
     } catch (error) {
       console.error('Error updating inventory after sale:', error)
@@ -397,23 +385,12 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     try {
       // For void transactions, we need to add the stock back
       for (const item of items) {
-        const response = await fetch('/api/stock/update', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-            productId: item.product.id,
-            quantity: item.quantity,
-            type: 'RETURN',
-            reason: 'Transaction voided'
-          })
+        await stockApi.updateStock({
+          productId: item.product.id,
+          quantity: item.quantity,
+          type: 'RETURN',
+          reason: 'Transaction voided'
         })
-
-        if (!response.ok) {
-          throw new Error(`Failed to restore inventory for product ${item.product.name}`)
-        }
       }
 
       console.log('Inventory restored successfully after void')
@@ -426,23 +403,12 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     try {
       // For refunds, we need to add the refunded quantity back to stock
       for (const item of items) {
-        const response = await fetch('/api/stock/update', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-            productId: item.productId,
-            quantity: item.quantity,
-            type: 'RETURN',
-            reason: 'Product refunded'
-          })
+        await stockApi.updateStock({
+          productId: item.productId,
+          quantity: item.quantity,
+          type: 'RETURN',
+          reason: 'Product refunded'
         })
-
-        if (!response.ok) {
-          throw new Error(`Failed to restore inventory for refunded product`)
-        }
       }
 
       console.log('Inventory restored successfully after refund')

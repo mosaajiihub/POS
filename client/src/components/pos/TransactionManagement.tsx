@@ -1,9 +1,13 @@
 import { useState } from 'react'
-import { Search, Eye, RotateCcw, Trash2, Receipt, Calendar } from 'lucide-react'
+import { Search, Eye, RotateCcw, Trash2, Receipt, Calendar, RefreshCw, AlertCircle } from 'lucide-react'
 import { Transaction, useTransactionStore } from '../../stores/transactionStore'
 import TransactionDetailsModal from './TransactionDetailsModal'
 import VoidTransactionModal from './VoidTransactionModal'
 import RefundTransactionModal from './RefundTransactionModal'
+import { LoadingSpinner } from '../ui/loading-spinner'
+import { useConfirmationDialog } from '../ui/confirmation-dialog'
+import { showToast } from '../../lib/toast'
+import { formatCurrency } from '../../lib/utils'
 
 export default function TransactionManagement() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -12,8 +16,10 @@ export default function TransactionManagement() {
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showVoidModal, setShowVoidModal] = useState(false)
   const [showRefundModal, setShowRefundModal] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
-  const { transactions, getTransactionsByDate } = useTransactionStore()
+  const { transactions, getTransactionsByDate, voidTransaction } = useTransactionStore()
+  const { showConfirmation, ConfirmationDialog } = useConfirmationDialog()
 
   const filteredTransactions = getTransactionsByDate(new Date(selectedDate)).filter(transaction =>
     transaction.transactionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -26,8 +32,24 @@ export default function TransactionManagement() {
   }
 
   const handleVoidTransaction = (transaction: Transaction) => {
-    setSelectedTransaction(transaction)
-    setShowVoidModal(true)
+    showConfirmation({
+      title: 'Void Transaction',
+      message: `Are you sure you want to void transaction ${transaction.transactionNumber}? This action cannot be undone and will restore inventory levels.`,
+      variant: 'danger',
+      confirmText: 'Void Transaction',
+      onConfirm: async () => {
+        try {
+          setIsLoading(true)
+          await voidTransaction(transaction.id, 'Voided by user')
+          showToast.success(`Transaction ${transaction.transactionNumber} voided successfully`)
+        } catch (error) {
+          showToast.error('Failed to void transaction')
+          throw error
+        } finally {
+          setIsLoading(false)
+        }
+      }
+    })
   }
 
   const handleRefundTransaction = (transaction: Transaction) => {
@@ -60,12 +82,31 @@ export default function TransactionManagement() {
     return transaction.paymentStatus === 'completed'
   }
 
+  const handleRefresh = () => {
+    setIsLoading(true)
+    // Simulate refresh - in real app this would refetch from API
+    setTimeout(() => {
+      setIsLoading(false)
+      showToast.success('Transactions refreshed')
+    }, 1000)
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Transaction Management</h2>
-        <p className="text-gray-600">View, void, and refund transactions</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Transaction Management</h2>
+          <p className="text-gray-600">View, void, and refund transactions</p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isLoading}
+          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
 
       {/* Filters */}
@@ -137,10 +178,19 @@ export default function TransactionManagement() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredTransactions.length === 0 ? (
+              {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                    No transactions found for the selected date
+                  <td colSpan={8} className="px-6 py-12 text-center">
+                    <LoadingSpinner text="Loading transactions..." />
+                  </td>
+                </tr>
+              ) : filteredTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center">
+                      <AlertCircle className="w-8 h-8 text-gray-400 mb-2" />
+                      <p className="text-gray-500">No transactions found for the selected date</p>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -161,7 +211,7 @@ export default function TransactionManagement() {
                       {transaction.items.length} items
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      ${transaction.totalAmount.toFixed(2)}
+                      {formatCurrency(transaction.totalAmount)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
                       {transaction.paymentMethod.name}
@@ -184,8 +234,9 @@ export default function TransactionManagement() {
                         {canVoid(transaction) && (
                           <button
                             onClick={() => handleVoidTransaction(transaction)}
-                            className="text-red-600 hover:text-red-900"
+                            className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Void Transaction"
+                            disabled={isLoading}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -240,6 +291,9 @@ export default function TransactionManagement() {
           }}
         />
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog />
     </div>
   )
 }

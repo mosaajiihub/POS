@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Filter, Edit, Trash2, Package, AlertTriangle, BarChart3 } from 'lucide-react'
+import { Plus, Search, Filter, Edit, Trash2, Package, AlertTriangle, BarChart3, Move } from 'lucide-react'
 import ProductForm from '../components/products/ProductForm'
 import ProductFilters from '../components/products/ProductFilters'
 import { StockManagement } from '../components/inventory/StockManagement'
+import { DragDropInventoryManager } from '../components/inventory/DragDropInventoryManager'
 import { useProductStore, ExtendedProduct } from '../stores/productStore'
+import { LoadingOverlay, LoadingSpinner } from '../components/ui/loading-spinner'
+import { useConfirmationDialog } from '../components/ui/confirmation-dialog'
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { showToast } from '../lib/toast'
 
 export default function Products() {
-  const [activeTab, setActiveTab] = useState<'catalog' | 'stock'>('catalog')
+  const [activeTab, setActiveTab] = useState<'catalog' | 'stock' | 'organize'>('catalog')
   const [searchTerm, setSearchTerm] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [showProductForm, setShowProductForm] = useState(false)
@@ -19,10 +24,58 @@ export default function Products() {
   })
 
   const { products, isLoading, error, fetchProducts, deleteProduct } = useProductStore()
+  const { showConfirmation, ConfirmationDialog } = useConfirmationDialog()
+
+  // Keyboard shortcuts for products page
+  useKeyboardShortcuts({
+    shortcuts: [
+      {
+        key: 'n',
+        ctrlKey: true,
+        description: 'Add New Product',
+        action: handleCreateProduct
+      },
+      {
+        key: 'f',
+        ctrlKey: true,
+        description: 'Focus Search',
+        action: () => {
+          const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement
+          searchInput?.focus()
+        }
+      },
+      {
+        key: '1',
+        altKey: true,
+        description: 'Switch to Catalog Tab',
+        action: () => setActiveTab('catalog')
+      },
+      {
+        key: '2',
+        altKey: true,
+        description: 'Switch to Stock Tab',
+        action: () => setActiveTab('stock')
+      },
+      {
+        key: '3',
+        altKey: true,
+        description: 'Switch to Organize Tab',
+        action: () => setActiveTab('organize')
+      }
+    ],
+    enabled: true
+  })
 
   useEffect(() => {
     fetchProducts()
   }, [fetchProducts])
+
+  // Show error toast when error occurs
+  useEffect(() => {
+    if (error) {
+      showToast.error(error)
+    }
+  }, [error])
 
   const handleCreateProduct = () => {
     setSelectedProduct(null)
@@ -34,15 +87,33 @@ export default function Products() {
     setShowProductForm(true)
   }
 
-  const handleDeleteProduct = async (productId: string) => {
-    if (window.confirm('Are you sure you want to delete this product?')) {
-      deleteProduct(productId)
-    }
+  const handleDeleteProduct = async (product: ExtendedProduct) => {
+    showConfirmation({
+      title: 'Delete Product',
+      message: `Are you sure you want to delete "${product.name}"? This action cannot be undone.`,
+      variant: 'danger',
+      confirmText: 'Delete Product',
+      onConfirm: async () => {
+        try {
+          deleteProduct(product.id)
+          showToast.success(`Product "${product.name}" deleted successfully`)
+        } catch (error) {
+          showToast.error('Failed to delete product')
+          throw error
+        }
+      }
+    })
   }
 
   const handleFormClose = () => {
     setShowProductForm(false)
     setSelectedProduct(null)
+  }
+
+  const handleFormSave = () => {
+    handleFormClose()
+    fetchProducts()
+    showToast.success(selectedProduct ? 'Product updated successfully' : 'Product created successfully')
   }
 
   const filteredProducts = products.filter(product => {
@@ -128,6 +199,19 @@ export default function Products() {
               <span>Stock Management</span>
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab('organize')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'organize'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Move className="w-4 h-4" />
+              <span>Organize Inventory</span>
+            </div>
+          </button>
         </nav>
       </div>
 
@@ -167,30 +251,27 @@ export default function Products() {
           </div>
 
           {/* Products Grid */}
-          <div className="card">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-          </div>
-        ) : filteredProducts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64">
-            <Package className="w-12 h-12 text-gray-400 mb-4" />
-            <p className="text-gray-600 text-center">
-              {searchTerm || Object.values(filters).some(f => f) 
-                ? 'No products match your search criteria'
-                : 'No products found. Create your first product to get started.'
-              }
-            </p>
-            {!searchTerm && !Object.values(filters).some(f => f) && (
-              <button
-                onClick={handleCreateProduct}
-                className="btn-primary mt-4"
-              >
-                Add Your First Product
-              </button>
-            )}
-          </div>
-        ) : (
+          <LoadingOverlay isLoading={isLoading} text="Loading products...">
+            <div className="card">
+              {filteredProducts.length === 0 && !isLoading ? (
+                <div className="flex flex-col items-center justify-center h-64">
+                  <Package className="w-12 h-12 text-gray-400 mb-4" />
+                  <p className="text-gray-600 text-center">
+                    {searchTerm || Object.values(filters).some(f => f) 
+                      ? 'No products match your search criteria'
+                      : 'No products found. Create your first product to get started.'
+                    }
+                  </p>
+                  {!searchTerm && !Object.values(filters).some(f => f) && (
+                    <button
+                      onClick={handleCreateProduct}
+                      className="btn-primary mt-4"
+                    >
+                      Add Your First Product
+                    </button>
+                  )}
+                </div>
+              ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
@@ -300,7 +381,7 @@ export default function Products() {
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDeleteProduct(product.id)}
+                          onClick={() => handleDeleteProduct(product)}
                           className="text-red-600 hover:text-red-900"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -311,9 +392,10 @@ export default function Products() {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-          </div>
+                </div>
+              )}
+            </div>
+          </LoadingOverlay>
         </>
       )}
 
@@ -321,17 +403,24 @@ export default function Products() {
         <StockManagement />
       )}
 
+      {activeTab === 'organize' && (
+        <DragDropInventoryManager
+          onProductEdit={handleEditProduct}
+          onProductDelete={handleDeleteProduct}
+        />
+      )}
+
       {/* Product Form Modal */}
       {showProductForm && (
         <ProductForm
           product={selectedProduct}
           onClose={handleFormClose}
-          onSave={() => {
-            handleFormClose()
-            fetchProducts()
-          }}
+          onSave={handleFormSave}
         />
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog />
     </div>
   )
 }

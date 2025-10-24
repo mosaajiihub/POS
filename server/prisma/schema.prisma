@@ -57,6 +57,8 @@ model Customer {
   // Relations
   sales         Sale[]
   invoices      Invoice[]
+  subscriptions Subscription[]
+  serviceAppointments ServiceAppointment[]
   
   @@map("customers")
 }
@@ -121,6 +123,8 @@ model Product {
   saleItems     SaleItem[]
   purchaseOrderItems PurchaseOrderItem[]
   stockMovements StockMovement[]
+  invoiceItems  InvoiceItem[]
+  serviceAppointmentParts ServiceAppointmentPart[]
   
   @@map("products")
 }
@@ -224,17 +228,129 @@ model Invoice {
   status        InvoiceStatus @default(DRAFT)
   subtotal      Decimal
   taxAmount     Decimal
+  discountAmount Decimal      @default(0)
   totalAmount   Decimal
+  notes         String?
+  terms         String?
   dueDate       DateTime
+  issuedDate    DateTime      @default(now())
+  sentDate      DateTime?
+  viewedDate    DateTime?
   paidDate      DateTime?
+  reminderCount Int           @default(0)
+  lastReminderDate DateTime?
+  paymentMethod PaymentMethod?
+  isRecurring   Boolean       @default(false)
+  recurringInterval String?   // 'monthly', 'quarterly', 'yearly'
+  nextInvoiceDate DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   
   // Relations
   customerId    String
   customer      Customer      @relation(fields: [customerId], references: [id])
+  items         InvoiceItem[]
+  payments      InvoicePayment[]
+  paymentLinks  PaymentLink[]
+  subscriptionInvoice SubscriptionInvoice?
+  serviceInvoices ServiceInvoice[]
   
   @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String    @id @default(cuid())
+  description String
+  quantity    Int
+  unitPrice   Decimal
+  totalPrice  Decimal
+  taxRate     Decimal   @default(0)
+  createdAt   DateTime  @default(now())
+  
+  // Relations
+  invoiceId   String
+  invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id])
+  
+  @@map("invoice_items")
+}
+
+model InvoicePayment {
+  id            String        @id @default(cuid())
+  amount        Decimal
+  paymentMethod PaymentMethod
+  paymentDate   DateTime      @default(now())
+  reference     String?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  
+  // Relations
+  invoiceId     String
+  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  @@map("invoice_payments")
+}
+
+model PaymentLink {
+  id          String    @id @default(cuid())
+  invoiceId   String
+  provider    String    // 'stripe', 'paypal', 'square'
+  url         String
+  amount      Decimal
+  currency    String    @default("USD")
+  status      String    @default("active") // 'active', 'expired', 'completed', 'cancelled'
+  expiresAt   DateTime?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  @@map("payment_links")
+}
+
+model Subscription {
+  id                String    @id @default(cuid())
+  customerId        String
+  planName          String
+  planDescription   String?
+  amount            Decimal
+  currency          String    @default("USD")
+  interval          String    // 'monthly', 'quarterly', 'yearly'
+  status            String    @default("active") // 'active', 'paused', 'cancelled', 'expired'
+  startDate         DateTime  @default(now())
+  endDate           DateTime?
+  nextBillingDate   DateTime
+  lastBillingDate   DateTime?
+  trialEndDate      DateTime?
+  cancelledAt       DateTime?
+  cancellationReason String?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  customer          Customer  @relation(fields: [customerId], references: [id])
+  invoices          SubscriptionInvoice[]
+  
+  @@map("subscriptions")
+}
+
+model SubscriptionInvoice {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  invoiceId      String       @unique
+  billingPeriodStart DateTime
+  billingPeriodEnd   DateTime
+  createdAt      DateTime     @default(now())
+  
+  // Relations
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoice        Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  @@map("subscription_invoices")
 }
 
 model Expense {
@@ -249,6 +365,129 @@ model Expense {
   updatedAt     DateTime      @updatedAt
   
   @@map("expenses")
+}
+
+model ServiceType {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  description   String?
+  basePrice     Decimal
+  estimatedDuration Int   // in minutes
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  appointments  ServiceAppointment[]
+  
+  @@map("service_types")
+}
+
+model Technician {
+  id            String    @id @default(cuid())
+  firstName     String
+  lastName      String
+  email         String?   @unique
+  phone         String?
+  specialties   String[]  // Array of specialties
+  hourlyRate    Decimal
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  appointments  ServiceAppointment[]
+  availability  TechnicianAvailability[]
+  
+  @@map("technicians")
+}
+
+model TechnicianAvailability {
+  id            String    @id @default(cuid())
+  technicianId  String
+  dayOfWeek     Int       // 0 = Sunday, 1 = Monday, etc.
+  startTime     String    // HH:MM format
+  endTime       String    // HH:MM format
+  isAvailable   Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  technician    Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  
+  @@unique([technicianId, dayOfWeek])
+  @@map("technician_availability")
+}
+
+model ServiceAppointment {
+  id              String              @id @default(cuid())
+  appointmentNumber String            @unique
+  customerId      String
+  technicianId    String
+  serviceTypeId   String
+  scheduledDate   DateTime
+  scheduledTime   String              // HH:MM format
+  estimatedDuration Int               // in minutes
+  actualStartTime DateTime?
+  actualEndTime   DateTime?
+  status          ServiceAppointmentStatus @default(SCHEDULED)
+  notes           String?
+  customerNotes   String?
+  internalNotes   String?
+  laborCost       Decimal             @default(0)
+  partsCost       Decimal             @default(0)
+  totalCost       Decimal             @default(0)
+  warrantyPeriod  Int?                // in days
+  warrantyExpiry  DateTime?
+  followUpDate    DateTime?
+  reminderSent    Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  // Relations
+  customer        Customer            @relation(fields: [customerId], references: [id])
+  technician      Technician          @relation(fields: [technicianId], references: [id])
+  serviceType     ServiceType         @relation(fields: [serviceTypeId], references: [id])
+  parts           ServiceAppointmentPart[]
+  invoices        ServiceInvoice[]
+  
+  @@map("service_appointments")
+}
+
+model ServiceAppointmentPart {
+  id              String            @id @default(cuid())
+  appointmentId   String
+  productId       String
+  quantity        Int
+  unitCost        Decimal
+  totalCost       Decimal
+  createdAt       DateTime          @default(now())
+  
+  // Relations
+  appointment     ServiceAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  product         Product           @relation(fields: [productId], references: [id])
+  
+  @@map("service_appointment_parts")
+}
+
+model ServiceInvoice {
+  id              String            @id @default(cuid())
+  appointmentId   String
+  invoiceId       String
+  laborHours      Decimal           @default(0)
+  laborRate       Decimal           @default(0)
+  laborCost       Decimal           @default(0)
+  partsCost       Decimal           @default(0)
+  totalCost       Decimal           @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  // Relations
+  appointment     ServiceAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  invoice         Invoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  @@unique([appointmentId])
+  @@map("service_invoices")
 }
 
 model AuditLog {
@@ -447,5 +686,14 @@ enum MovementType {
   ADJUSTMENT
   RETURN
   DAMAGE
+}
+
+enum ServiceAppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
 }
 

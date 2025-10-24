@@ -1,6 +1,7 @@
 import { MovementType, Product, StockMovement } from '@prisma/client'
 import { prisma } from '../config/database'
 import { logger } from '../utils/logger'
+import { webSocketService } from './websocketService'
 
 export interface StockAdjustmentData {
   productId: string
@@ -146,6 +147,9 @@ export class StockService {
 
         return { updatedProduct, stockMovement }
       })
+
+      // Broadcast stock update via WebSocket
+      webSocketService.broadcastStockUpdate(productId, newStock, previousStock)
 
       // Check for low stock alerts after update
       await this.checkLowStockAlert(productId)
@@ -568,6 +572,9 @@ export class StockService {
         await this.checkLowStockAlert(item.productId)
       }
 
+      // Broadcast sale completion (this would be called from transaction service)
+      // webSocketService.broadcastSaleCompleted(transactionId, totalAmount, saleItems)
+
       logger.info(`Stock updated for sale: ${saleItems.length} items`)
 
       return {
@@ -597,17 +604,22 @@ export class StockService {
       const alertThreshold = Math.max(product.minStockLevel, Math.ceil(product.minStockLevel * 1.5))
 
       if (product.stockLevel <= alertThreshold) {
-        // In a real application, this would trigger notifications
-        // For now, we'll just log the alert
         const severity = product.stockLevel === 0 ? 'OUT_OF_STOCK' : 
                         product.stockLevel <= product.minStockLevel ? 'CRITICAL' : 'LOW'
         
         logger.warn(`Low stock alert for ${product.name} (${product.sku}): ${product.stockLevel} units remaining (${severity})`)
         
-        // Here you could:
+        // Broadcast low stock alert via WebSocket
+        webSocketService.broadcastLowStockAlert(
+          product.id,
+          product.name,
+          product.stockLevel,
+          product.minStockLevel
+        )
+        
+        // Here you could also:
         // - Send email notifications
         // - Create system notifications
-        // - Update dashboard alerts
         // - Trigger automatic reorder processes
       }
     } catch (error) {

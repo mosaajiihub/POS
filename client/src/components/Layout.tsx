@@ -1,7 +1,9 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Home, ShoppingCart, Package, Users, Building, Receipt, BarChart3, CreditCard, PieChart } from 'lucide-react'
+import { Home, ShoppingCart, Package, Users, Building, Receipt, FileText, BarChart3, CreditCard, PieChart, FileBarChart, Keyboard } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
+import { ThemeToggle } from './ui/theme-toggle'
+import { useGlobalKeyboardShortcuts, useKeyboardShortcutsHelp } from '../hooks/useKeyboardShortcuts'
 
 interface LayoutProps {
   children: ReactNode
@@ -10,6 +12,10 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const { user, logout } = useAuthStore()
   const location = useLocation()
+  
+  // Enable global keyboard shortcuts
+  const globalShortcuts = useGlobalKeyboardShortcuts()
+  const { showHelp } = useKeyboardShortcutsHelp()
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home },
@@ -18,19 +24,21 @@ export default function Layout({ children }: LayoutProps) {
     { name: 'Customers', href: '/customers', icon: Users },
     { name: 'Suppliers', href: '/suppliers', icon: Building },
     { name: 'Transactions', href: '/transactions', icon: Receipt },
+    { name: 'Invoices', href: '/invoices', icon: FileText },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+    { name: 'Reports', href: '/reports', icon: FileBarChart },
     { name: 'Expenses', href: '/expenses', icon: CreditCard },
     { name: 'Financial', href: '/financial-dashboard', icon: PieChart }
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-card shadow-sm border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-8">
-              <Link to="/" className="text-xl font-semibold text-gray-900">
+              <Link to="/" className="text-xl font-semibold text-foreground">
                 Mosaajii POS
               </Link>
               
@@ -45,8 +53,8 @@ export default function Layout({ children }: LayoutProps) {
                       to={item.href}
                       className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                         isActive
-                          ? 'bg-primary-100 text-primary-700'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                       }`}
                     >
                       <Icon className="w-4 h-4" />
@@ -58,7 +66,15 @@ export default function Layout({ children }: LayoutProps) {
             </div>
             
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-700">
+              <button
+                onClick={() => showHelp(globalShortcuts)}
+                className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                title="Keyboard Shortcuts (Ctrl+K)"
+              >
+                <Keyboard className="w-4 h-4" />
+              </button>
+              <ThemeToggle />
+              <span className="text-sm text-muted-foreground">
                 Welcome, {user?.firstName} {user?.lastName}
               </span>
               <button

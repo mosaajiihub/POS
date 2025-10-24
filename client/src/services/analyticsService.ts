@@ -74,6 +74,52 @@ export interface ExportRequest {
   productId?: string
 }
 
+export interface DemandForecast {
+  productId: string
+  productName: string
+  sku: string
+  currentStock: number
+  averageDemand: number
+  forecastedDemand: number
+  recommendedOrder: number
+  confidence: number
+  trend: 'increasing' | 'decreasing' | 'stable'
+}
+
+export interface SeasonalTrend {
+  period: string
+  metric: 'revenue' | 'sales' | 'profit'
+  value: number
+  previousValue: number
+  change: number
+  changePercent: number
+  seasonalIndex: number
+}
+
+export interface BusinessIntelligence {
+  kpis: {
+    name: string
+    value: number
+    target?: number
+    trend: 'up' | 'down' | 'stable'
+    changePercent: number
+  }[]
+  insights: {
+    type: 'opportunity' | 'warning' | 'info'
+    title: string
+    description: string
+    impact: 'high' | 'medium' | 'low'
+    actionable: boolean
+  }[]
+  recommendations: {
+    category: 'inventory' | 'pricing' | 'marketing' | 'operations'
+    title: string
+    description: string
+    priority: 'high' | 'medium' | 'low'
+    estimatedImpact: string
+  }[]
+}
+
 /**
  * Analytics API Service
  * Handles all analytics and reporting API calls
@@ -271,6 +317,99 @@ export class AnalyticsService {
       return {
         success: false,
         message: 'Failed to export data'
+      }
+    }
+  }
+
+  /**
+   * Get demand forecasting
+   */
+  static async getDemandForecast(filters: AnalyticsFilters): Promise<{
+    success: boolean
+    message: string
+    forecasts?: DemandForecast[]
+  }> {
+    try {
+      const params = new URLSearchParams()
+      params.append('startDate', filters.startDate)
+      params.append('endDate', filters.endDate)
+      
+      if (filters.categoryId) params.append('categoryId', filters.categoryId)
+      if (filters.productId) params.append('productId', filters.productId)
+
+      const response = await axios.get(
+        `${API_BASE_URL}/analytics/demand-forecast?${params.toString()}`,
+        { headers: this.getAuthHeaders() }
+      )
+
+      return response.data
+    } catch (error) {
+      console.error('Get demand forecast error:', error)
+      return {
+        success: false,
+        message: 'Failed to retrieve demand forecast'
+      }
+    }
+  }
+
+  /**
+   * Get seasonal trends
+   */
+  static async getSeasonalTrends(filters: AnalyticsFilters): Promise<{
+    success: boolean
+    message: string
+    trends?: SeasonalTrend[]
+  }> {
+    try {
+      const params = new URLSearchParams()
+      params.append('startDate', filters.startDate)
+      params.append('endDate', filters.endDate)
+      
+      if (filters.categoryId) params.append('categoryId', filters.categoryId)
+      if (filters.productId) params.append('productId', filters.productId)
+
+      const response = await axios.get(
+        `${API_BASE_URL}/analytics/seasonal-trends?${params.toString()}`,
+        { headers: this.getAuthHeaders() }
+      )
+
+      return response.data
+    } catch (error) {
+      console.error('Get seasonal trends error:', error)
+      return {
+        success: false,
+        message: 'Failed to retrieve seasonal trends'
+      }
+    }
+  }
+
+  /**
+   * Get business intelligence
+   */
+  static async getBusinessIntelligence(filters: AnalyticsFilters): Promise<{
+    success: boolean
+    message: string
+    intelligence?: BusinessIntelligence
+  }> {
+    try {
+      const params = new URLSearchParams()
+      params.append('startDate', filters.startDate)
+      params.append('endDate', filters.endDate)
+      
+      if (filters.categoryId) params.append('categoryId', filters.categoryId)
+      if (filters.productId) params.append('productId', filters.productId)
+
+      const response = await axios.get(
+        `${API_BASE_URL}/analytics/business-intelligence?${params.toString()}`,
+        { headers: this.getAuthHeaders() }
+      )
+
+      return response.data
+    } catch (error) {
+      console.error('Get business intelligence error:', error)
+      return {
+        success: false,
+        message: 'Failed to retrieve business intelligence'
       }
     }
   }

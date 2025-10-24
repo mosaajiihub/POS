@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { Product } from '../pages/POS'
+import { productApi } from '../services/apiService'
 
 export interface ExtendedProduct extends Product {
   description?: string
@@ -21,9 +22,9 @@ interface ProductStore {
   fetchProducts: () => Promise<void>
   findProductByBarcode: (barcode: string) => ExtendedProduct | null
   searchProducts: (query: string) => ExtendedProduct[]
-  addProduct: (product: Omit<ExtendedProduct, 'id' | 'createdAt' | 'updatedAt'>) => void
-  updateProduct: (id: string, updates: Partial<ExtendedProduct>) => void
-  deleteProduct: (id: string) => void
+  addProduct: (product: Omit<ExtendedProduct, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  updateProduct: (id: string, updates: Partial<ExtendedProduct>) => Promise<void>
+  deleteProduct: (id: string) => Promise<void>
 }
 
 // Mock data for development - will be replaced with API calls
@@ -153,52 +154,165 @@ export const useProductStore = create<ProductStore>((set, get) => ({
     set({ isLoading: true, error: null })
     
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const response = await productApi.getProducts()
+      const products = response.products || []
+      const categories = [...new Set(products.map((p: any) => p.category?.name || p.category))]
       
-      // In a real app, this would be an API call
+      // Transform API response to match our interface
+      const transformedProducts: ExtendedProduct[] = products.map((product: any) => ({
+        id: product.id,
+        name: product.name,
+        description: product.description || '',
+        price: product.sellingPrice,
+        costPrice: product.costPrice,
+        wholesalePrice: product.wholesalePrice,
+        category: product.category?.name || product.category || 'Uncategorized',
+        sku: product.sku,
+        barcode: product.barcode,
+        stockLevel: product.stockLevel || 0,
+        minStockLevel: product.minStockLevel || 0,
+        taxRate: product.taxRate || 0,
+        categoryId: product.categoryId,
+        supplierId: product.supplierId,
+        isActive: product.isActive !== false,
+        createdAt: new Date(product.createdAt),
+        updatedAt: new Date(product.updatedAt)
+      }))
+      
+      set({ 
+        products: transformedProducts, 
+        categories, 
+        isLoading: false 
+      })
+    } catch (error: any) {
+      console.error('Failed to fetch products:', error)
+      
+      // Fallback to mock data if API fails
       const products = mockProducts
       const categories = [...new Set(products.map(p => p.category))]
       
       set({ 
         products, 
-        categories, 
-        isLoading: false 
-      })
-    } catch (error) {
-      set({ 
-        error: 'Failed to fetch products', 
+        categories,
+        error: error.message || 'Failed to fetch products', 
         isLoading: false 
       })
     }
   },
 
-  addProduct: (productData) => {
-    const newProduct: ExtendedProduct = {
-      ...productData,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }
+  addProduct: async (productData) => {
+    set({ isLoading: true, error: null })
     
-    set(state => ({
-      products: [...state.products, newProduct],
-      categories: [...new Set([...state.categories, newProduct.category])]
-    }))
+    try {
+      const response = await productApi.createProduct({
+        name: productData.name,
+        description: productData.description,
+        sku: productData.sku,
+        barcode: productData.barcode,
+        costPrice: productData.costPrice,
+        sellingPrice: productData.price,
+        wholesalePrice: productData.wholesalePrice,
+        stockLevel: productData.stockLevel,
+        minStockLevel: productData.minStockLevel,
+        taxRate: productData.taxRate,
+        categoryId: productData.categoryId,
+        supplierId: productData.supplierId
+      })
+
+      const newProduct: ExtendedProduct = {
+        ...productData,
+        id: response.product.id,
+        price: response.product.sellingPrice,
+        createdAt: new Date(response.product.createdAt),
+        updatedAt: new Date(response.product.updatedAt)
+      }
+      
+      set(state => ({
+        products: [...state.products, newProduct],
+        categories: [...new Set([...state.categories, newProduct.category])],
+        isLoading: false
+      }))
+    } catch (error: any) {
+      console.error('Failed to add product:', error)
+      
+      // Fallback to local addition if API fails
+      const newProduct: ExtendedProduct = {
+        ...productData,
+        id: Date.now().toString(),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+      
+      set(state => ({
+        products: [...state.products, newProduct],
+        categories: [...new Set([...state.categories, newProduct.category])],
+        error: error.message || 'Failed to add product',
+        isLoading: false
+      }))
+    }
   },
 
-  updateProduct: (id, updates) => {
-    set(state => ({
-      products: state.products.map(product =>
-        product.id === id ? { ...product, ...updates, updatedAt: new Date() } : product
-      )
-    }))
+  updateProduct: async (id, updates) => {
+    set({ isLoading: true, error: null })
+    
+    try {
+      const updateData: any = {}
+      if (updates.name) updateData.name = updates.name
+      if (updates.description) updateData.description = updates.description
+      if (updates.sku) updateData.sku = updates.sku
+      if (updates.barcode) updateData.barcode = updates.barcode
+      if (updates.costPrice !== undefined) updateData.costPrice = updates.costPrice
+      if (updates.price !== undefined) updateData.sellingPrice = updates.price
+      if (updates.wholesalePrice !== undefined) updateData.wholesalePrice = updates.wholesalePrice
+      if (updates.stockLevel !== undefined) updateData.stockLevel = updates.stockLevel
+      if (updates.minStockLevel !== undefined) updateData.minStockLevel = updates.minStockLevel
+      if (updates.taxRate !== undefined) updateData.taxRate = updates.taxRate
+      if (updates.categoryId) updateData.categoryId = updates.categoryId
+      if (updates.supplierId) updateData.supplierId = updates.supplierId
+      if (updates.isActive !== undefined) updateData.isActive = updates.isActive
+
+      await productApi.updateProduct(id, updateData)
+      
+      set(state => ({
+        products: state.products.map(product =>
+          product.id === id ? { ...product, ...updates, updatedAt: new Date() } : product
+        ),
+        isLoading: false
+      }))
+    } catch (error: any) {
+      console.error('Failed to update product:', error)
+      
+      // Fallback to local update if API fails
+      set(state => ({
+        products: state.products.map(product =>
+          product.id === id ? { ...product, ...updates, updatedAt: new Date() } : product
+        ),
+        error: error.message || 'Failed to update product',
+        isLoading: false
+      }))
+    }
   },
 
-  deleteProduct: (id) => {
-    set(state => ({
-      products: state.products.filter(product => product.id !== id)
-    }))
+  deleteProduct: async (id) => {
+    set({ isLoading: true, error: null })
+    
+    try {
+      await productApi.deleteProduct(id)
+      
+      set(state => ({
+        products: state.products.filter(product => product.id !== id),
+        isLoading: false
+      }))
+    } catch (error: any) {
+      console.error('Failed to delete product:', error)
+      
+      // Fallback to local deletion if API fails
+      set(state => ({
+        products: state.products.filter(product => product.id !== id),
+        error: error.message || 'Failed to delete product',
+        isLoading: false
+      }))
+    }
   },
 
   findProductByBarcode: (barcode) => {

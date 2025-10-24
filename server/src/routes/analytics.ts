@@ -12,6 +12,13 @@ const router = Router()
  * Analytics and Reporting Routes
  */
 
+// Get dashboard metrics
+router.get('/dashboard',
+  requireAuth,
+  requirePermission('analytics', 'read'),
+  AnalyticsController.getDashboardMetrics
+)
+
 // Get sales metrics
 router.get('/sales/metrics',
   requireAuth,
@@ -50,6 +57,30 @@ router.get('/profit-analysis',
   requirePermission('analytics', 'read'),
   analyticsValidation.getProfitAnalysis,
   AnalyticsController.getProfitAnalysis
+)
+
+// Get demand forecasting
+router.get('/demand-forecast',
+  requireAuth,
+  requirePermission('analytics', 'read'),
+  analyticsValidation.getDemandForecast,
+  AnalyticsController.getDemandForecast
+)
+
+// Get seasonal trends
+router.get('/seasonal-trends',
+  requireAuth,
+  requirePermission('analytics', 'read'),
+  analyticsValidation.getSeasonalTrends,
+  AnalyticsController.getSeasonalTrends
+)
+
+// Get business intelligence
+router.get('/business-intelligence',
+  requireAuth,
+  requirePermission('analytics', 'read'),
+  analyticsValidation.getBusinessIntelligence,
+  AnalyticsController.getBusinessIntelligence
 )
 
 // Export analytics data

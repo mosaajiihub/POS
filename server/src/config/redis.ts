@@ -47,17 +47,28 @@ export function getRedisClient(): RedisClientType {
 // Session management utilities
 export class SessionManager {
   private static readonly SESSION_PREFIX = 'session:'
+  private static readonly USER_SESSIONS_PREFIX = 'user_sessions:'
   private static readonly SESSION_EXPIRY = 24 * 60 * 60 // 24 hours in seconds
 
   static async createSession(userId: string, sessionData: any): Promise<string> {
     const sessionId = `${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     const sessionKey = `${this.SESSION_PREFIX}${sessionId}`
+    const userSessionsKey = `${this.USER_SESSIONS_PREFIX}${userId}`
     
-    await redisClient.setEx(sessionKey, this.SESSION_EXPIRY, JSON.stringify({
+    const session = {
+      sessionId,
       userId,
       createdAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+      isActive: true,
       ...sessionData
-    }))
+    }
+    
+    await redisClient.setEx(sessionKey, this.SESSION_EXPIRY, JSON.stringify(session))
+    
+    // Track user sessions
+    await redisClient.sAdd(userSessionsKey, sessionId)
+    await redisClient.expire(userSessionsKey, this.SESSION_EXPIRY)
     
     return sessionId
   }
@@ -81,28 +92,129 @@ export class SessionManager {
       return false
     }
     
-    const updatedSession = { ...existingSession, ...sessionData }
+    const updatedSession = { 
+      ...existingSession, 
+      ...sessionData,
+      lastActivity: new Date().toISOString()
+    }
     await redisClient.setEx(sessionKey, this.SESSION_EXPIRY, JSON.stringify(updatedSession))
     
     return true
   }
 
+  static async updateSessionActivity(sessionId: string): Promise<boolean> {
+    return this.updateSession(sessionId, { lastActivity: new Date().toISOString() })
+  }
+
   static async deleteSession(sessionId: string): Promise<boolean> {
     const sessionKey = `${this.SESSION_PREFIX}${sessionId}`
-    const result = await redisClient.del(sessionKey)
+    const session = await this.getSession(sessionId)
     
+    if (session) {
+      // Remove from user sessions set
+      const userSessionsKey = `${this.USER_SESSIONS_PREFIX}${session.userId}`
+      await redisClient.sRem(userSessionsKey, sessionId)
+    }
+    
+    const result = await redisClient.del(sessionKey)
     return result > 0
   }
 
+  static async destroySession(sessionId: string): Promise<boolean> {
+    const session = await this.getSession(sessionId)
+    if (session) {
+      await this.updateSession(sessionId, { isActive: false })
+    }
+    return this.deleteSession(sessionId)
+  }
+
   static async deleteUserSessions(userId: string): Promise<number> {
-    const pattern = `${this.SESSION_PREFIX}${userId}_*`
-    const keys = await redisClient.keys(pattern)
+    const userSessionsKey = `${this.USER_SESSIONS_PREFIX}${userId}`
+    const sessionIds = await redisClient.sMembers(userSessionsKey)
     
-    if (keys.length === 0) {
+    if (sessionIds.length === 0) {
       return 0
     }
     
-    return await redisClient.del(keys)
+    // Delete all session keys
+    const sessionKeys = sessionIds.map(id => `${this.SESSION_PREFIX}${id}`)
+    const deletedCount = await redisClient.del(sessionKeys)
+    
+    // Clear user sessions set
+    await redisClient.del(userSessionsKey)
+    
+    return deletedCount
+  }
+
+  static async getUserSessions(userId: string): Promise<any[]> {
+    const userSessionsKey = `${this.USER_SESSIONS_PREFIX}${userId}`
+    const sessionIds = await redisClient.sMembers(userSessionsKey)
+    
+    if (sessionIds.length === 0) {
+      return []
+    }
+    
+    const sessions = []
+    for (const sessionId of sessionIds) {
+      const session = await this.getSession(sessionId)
+      if (session) {
+        sessions.push(session)
+      }
+    }
+    
+    return sessions
+  }
+
+  static async getAllActiveSessions(): Promise<any[]> {
+    const pattern = `${this.SESSION_PREFIX}*`
+    const keys = await redisClient.keys(pattern)
+    
+    const sessions = []
+    for (const key of keys) {
+      const sessionData = await redisClient.get(key)
+      if (sessionData) {
+        const session = JSON.parse(sessionData)
+        if (session.isActive) {
+          sessions.push(session)
+        }
+      }
+    }
+    
+    return sessions
+  }
+
+  static async getActiveSessionsCount(): Promise<number> {
+    const pattern = `${this.SESSION_PREFIX}*`
+    const keys = await redisClient.keys(pattern)
+    
+    let activeCount = 0
+    for (const key of keys) {
+      const sessionData = await redisClient.get(key)
+      if (sessionData) {
+        const session = JSON.parse(sessionData)
+        if (session.isActive) {
+          activeCount++
+        }
+      }
+    }
+    
+    return activeCount
+  }
+
+  static async cleanupExpiredSessions(): Promise<number> {
+    const pattern = `${this.SESSION_PREFIX}*`
+    const keys = await redisClient.keys(pattern)
+    
+    let cleanedCount = 0
+    for (const key of keys) {
+      const ttl = await redisClient.ttl(key)
+      if (ttl === -1 || ttl === -2) { // Key expired or doesn't exist
+        await redisClient.del(key)
+        cleanedCount++
+      }
+    }
+    
+    return cleanedCount
   }
 }
 

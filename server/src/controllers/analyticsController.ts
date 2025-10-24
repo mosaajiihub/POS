@@ -9,6 +9,26 @@ import { logger } from '../utils/logger'
  */
 export class AnalyticsController {
   /**
+   * Get dashboard metrics
+   */
+  static async getDashboardMetrics(req: Request, res: Response) {
+    try {
+      const result = await AnalyticsService.getDashboardMetrics()
+
+      if (!result.success) {
+        return res.status(400).json(result)
+      }
+
+      res.status(200).json(result.data)
+    } catch (error) {
+      logger.error('Get dashboard metrics controller error:', error)
+      res.status(500).json({
+        success: false,
+        message: 'An internal error occurred'
+      })
+    }
+  }
+  /**
    * Get sales metrics
    */
   static async getSalesMetrics(req: Request, res: Response) {
@@ -307,6 +327,138 @@ export class AnalyticsController {
   }
 
   /**
+   * Get demand forecasting
+   */
+  static async getDemandForecast(req: Request, res: Response) {
+    try {
+      const errors = validationResult(req)
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array()
+        })
+      }
+
+      const {
+        startDate,
+        endDate,
+        categoryId,
+        productId
+      } = req.query
+
+      const filters: SalesAnalyticsFilters = {
+        startDate: new Date(startDate as string),
+        endDate: new Date(endDate as string),
+        ...(categoryId && { categoryId: categoryId as string }),
+        ...(productId && { productId: productId as string })
+      }
+
+      const result = await AnalyticsService.getDemandForecast(filters)
+
+      if (!result.success) {
+        return res.status(400).json(result)
+      }
+
+      res.json(result)
+    } catch (error) {
+      logger.error('Get demand forecast controller error:', error)
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      })
+    }
+  }
+
+  /**
+   * Get seasonal trends
+   */
+  static async getSeasonalTrends(req: Request, res: Response) {
+    try {
+      const errors = validationResult(req)
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array()
+        })
+      }
+
+      const {
+        startDate,
+        endDate,
+        categoryId,
+        productId
+      } = req.query
+
+      const filters: SalesAnalyticsFilters = {
+        startDate: new Date(startDate as string),
+        endDate: new Date(endDate as string),
+        ...(categoryId && { categoryId: categoryId as string }),
+        ...(productId && { productId: productId as string })
+      }
+
+      const result = await AnalyticsService.getSeasonalTrends(filters)
+
+      if (!result.success) {
+        return res.status(400).json(result)
+      }
+
+      res.json(result)
+    } catch (error) {
+      logger.error('Get seasonal trends controller error:', error)
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      })
+    }
+  }
+
+  /**
+   * Get business intelligence
+   */
+  static async getBusinessIntelligence(req: Request, res: Response) {
+    try {
+      const errors = validationResult(req)
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array()
+        })
+      }
+
+      const {
+        startDate,
+        endDate,
+        categoryId,
+        productId
+      } = req.query
+
+      const filters: SalesAnalyticsFilters = {
+        startDate: new Date(startDate as string),
+        endDate: new Date(endDate as string),
+        ...(categoryId && { categoryId: categoryId as string }),
+        ...(productId && { productId: productId as string })
+      }
+
+      const result = await AnalyticsService.getBusinessIntelligence(filters)
+
+      if (!result.success) {
+        return res.status(400).json(result)
+      }
+
+      res.json(result)
+    } catch (error) {
+      logger.error('Get business intelligence controller error:', error)
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      })
+    }
+  }
+
+  /**
    * Get content type for export format
    */
   private static getContentType(format: string): string {
@@ -502,6 +654,81 @@ export const analyticsValidation = {
       .isUUID()
       .withMessage('Category ID must be a valid UUID'),
     body('productId')
+      .optional()
+      .isUUID()
+      .withMessage('Product ID must be a valid UUID')
+  ],
+
+  getDemandForecast: [
+    query('startDate')
+      .isISO8601()
+      .withMessage('Start date must be a valid ISO 8601 date'),
+    query('endDate')
+      .isISO8601()
+      .withMessage('End date must be a valid ISO 8601 date')
+      .custom((endDate, { req }) => {
+        const startDate = new Date(req.query?.startDate as string)
+        const end = new Date(endDate)
+        if (end <= startDate) {
+          throw new Error('End date must be after start date')
+        }
+        return true
+      }),
+    query('categoryId')
+      .optional()
+      .isUUID()
+      .withMessage('Category ID must be a valid UUID'),
+    query('productId')
+      .optional()
+      .isUUID()
+      .withMessage('Product ID must be a valid UUID')
+  ],
+
+  getSeasonalTrends: [
+    query('startDate')
+      .isISO8601()
+      .withMessage('Start date must be a valid ISO 8601 date'),
+    query('endDate')
+      .isISO8601()
+      .withMessage('End date must be a valid ISO 8601 date')
+      .custom((endDate, { req }) => {
+        const startDate = new Date(req.query?.startDate as string)
+        const end = new Date(endDate)
+        if (end <= startDate) {
+          throw new Error('End date must be after start date')
+        }
+        return true
+      }),
+    query('categoryId')
+      .optional()
+      .isUUID()
+      .withMessage('Category ID must be a valid UUID'),
+    query('productId')
+      .optional()
+      .isUUID()
+      .withMessage('Product ID must be a valid UUID')
+  ],
+
+  getBusinessIntelligence: [
+    query('startDate')
+      .isISO8601()
+      .withMessage('Start date must be a valid ISO 8601 date'),
+    query('endDate')
+      .isISO8601()
+      .withMessage('End date must be a valid ISO 8601 date')
+      .custom((endDate, { req }) => {
+        const startDate = new Date(req.query?.startDate as string)
+        const end = new Date(endDate)
+        if (end <= startDate) {
+          throw new Error('End date must be after start date')
+        }
+        return true
+      }),
+    query('categoryId')
+      .optional()
+      .isUUID()
+      .withMessage('Category ID must be a valid UUID'),
+    query('productId')
       .optional()
       .isUUID()
       .withMessage('Product ID must be a valid UUID')
