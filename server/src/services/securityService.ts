@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import * as crypto from 'crypto'
 import bcrypt from 'bcrypt'
 import { prisma } from '../config/database'
 import { logger } from '../utils/logger'

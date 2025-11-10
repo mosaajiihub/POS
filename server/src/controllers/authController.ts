@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { body, validationResult } from 'express-validator'
 import { UserRole } from '@prisma/client'
 import { AuthService } from '../services/authService'
+import { BruteForceProtectionService } from '../services/bruteForceProtectionService'
 import { logger } from '../utils/logger'
 
 /**
@@ -10,7 +11,7 @@ import { logger } from '../utils/logger'
  */
 export class AuthController {
   /**
-   * User login
+   * User login (enhanced with MFA and security features)
    */
   static async login(req: Request, res: Response) {
     try {
@@ -26,9 +27,32 @@ export class AuthController {
         })
       }
 
-      const { email, password } = req.body
+      const { email, password, captchaToken } = req.body
       const ipAddress = req.ip
       const userAgent = req.headers['user-agent']
+
+      // Check if CAPTCHA is required
+      const requiresCaptcha = await BruteForceProtectionService.shouldRequireCaptcha(undefined, ipAddress)
+      if (requiresCaptcha) {
+        if (!captchaToken) {
+          return res.status(400).json({
+            error: {
+              code: 'CAPTCHA_REQUIRED',
+              message: 'CAPTCHA verification is required'
+            }
+          })
+        }
+
+        const captchaValid = await BruteForceProtectionService.verifyCaptcha(captchaToken, ipAddress)
+        if (!captchaValid) {
+          return res.status(400).json({
+            error: {
+              code: 'CAPTCHA_INVALID',
+              message: 'Invalid CAPTCHA verification'
+            }
+          })
+        }
+      }
 
       const result = await AuthService.login(
         { email, password },
@@ -37,9 +61,77 @@ export class AuthController {
       )
 
       if (!result.success) {
+        const statusCode = result.requiresMFA ? 200 : 401
+        const errorCode = result.requiresMFA ? 'MFA_REQUIRED' : 'LOGIN_FAILED'
+        
+        return res.status(statusCode).json({
+          error: {
+            code: errorCode,
+            message: result.message
+          },
+          requiresMFA: result.requiresMFA,
+          tempUserId: result.tempUserId
+        })
+      }
+
+      // Set session cookie if session ID is provided
+      if (result.sessionId) {
+        res.cookie('sessionId', result.sessionId, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        })
+      }
+
+      res.status(200).json({
+        message: result.message,
+        user: result.user,
+        tokens: result.tokens
+      })
+    } catch (error) {
+      logger.error('Login controller error:', error)
+      res.status(500).json({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'An internal error occurred'
+        }
+      })
+    }
+  }
+
+  /**
+   * Complete MFA login
+   */
+  static async completeMFALogin(req: Request, res: Response) {
+    try {
+      // Check validation errors
+      const errors = validationResult(req)
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid input data',
+            details: errors.array()
+          }
+        })
+      }
+
+      const { tempUserId, mfaToken } = req.body
+      const ipAddress = req.ip
+      const userAgent = req.headers['user-agent']
+
+      const result = await AuthService.completeMFALogin(
+        tempUserId,
+        mfaToken,
+        ipAddress,
+        userAgent
+      )
+
+      if (!result.success) {
         return res.status(401).json({
           error: {
-            code: 'LOGIN_FAILED',
+            code: 'MFA_LOGIN_FAILED',
             message: result.message
           }
         })
@@ -61,7 +153,7 @@ export class AuthController {
         tokens: result.tokens
       })
     } catch (error) {
-      logger.error('Login controller error:', error)
+      logger.error('Complete MFA login controller error:', error)
       res.status(500).json({
         error: {
           code: 'INTERNAL_ERROR',
@@ -454,7 +546,22 @@ export const authValidation = {
       .withMessage('Valid email is required'),
     body('password')
       .isLength({ min: 1 })
-      .withMessage('Password is required')
+      .withMessage('Password is required'),
+    body('captchaToken')
+      .optional()
+      .isString()
+      .withMessage('CAPTCHA token must be a string')
+  ],
+
+  completeMFALogin: [
+    body('tempUserId')
+      .isString()
+      .isLength({ min: 1 })
+      .withMessage('Temporary user ID is required'),
+    body('mfaToken')
+      .isString()
+      .isLength({ min: 6, max: 8 })
+      .withMessage('MFA token must be 6-8 characters')
   ],
 
   register: [

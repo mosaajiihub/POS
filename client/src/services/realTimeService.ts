@@ -25,7 +25,7 @@ class RealTimeService {
   private url: string
 
   constructor() {
-    this.url = process.env.REACT_APP_WS_URL || 'ws://localhost:5000'
+    this.url = (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:5000'
   }
 
   connect(): Promise<void> {
@@ -206,7 +206,7 @@ class RealTimeService {
 export const realTimeService = new RealTimeService()
 
 // Auto-connect when service is imported (in production)
-if (process.env.NODE_ENV === 'production') {
+if ((import.meta as any).env?.MODE === 'production') {
   realTimeService.connect().catch(error => {
     console.error('Failed to connect to real-time service:', error)
   })

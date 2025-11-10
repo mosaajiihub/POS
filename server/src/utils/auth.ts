@@ -180,6 +180,42 @@ export class TokenUtils {
   }
 
   /**
+   * Generate temporary token for MFA verification
+   */
+  static generateTempToken(userId: string): string {
+    return jwt.sign(
+      { userId, type: 'temp_mfa' },
+      JWT_SECRET,
+      {
+        expiresIn: '10m', // 10 minutes for MFA completion
+        issuer: 'mosaajii-pos',
+        audience: 'mosaajii-pos-client'
+      }
+    )
+  }
+
+  /**
+   * Verify temporary MFA token
+   */
+  static verifyTempToken(token: string): string | null {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET, {
+        issuer: 'mosaajii-pos',
+        audience: 'mosaajii-pos-client'
+      }) as { userId: string; type: string }
+
+      if (decoded.type !== 'temp_mfa') {
+        throw new Error('Invalid token type')
+      }
+
+      return decoded.userId
+    } catch (error) {
+      logger.warn('Temporary token verification failed:', error)
+      return null
+    }
+  }
+
+  /**
    * Extract token from Authorization header
    */
   static extractTokenFromHeader(authHeader: string | undefined): string | null {

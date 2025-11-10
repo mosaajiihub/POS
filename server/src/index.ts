@@ -8,6 +8,11 @@ import dotenv from 'dotenv'
 import { createServer } from 'http'
 import { errorHandler } from './middleware/errorHandler'
 import { logger } from './utils/logger'
+import { securityHeaders, developmentCSPConfig, productionCSPConfig, validateSecurityHeaders } from './middleware/securityHeaders'
+import { securityHeadersValidationMiddleware } from './utils/securityHeadersValidator'
+import { apiSecurityMiddleware, securityContextMiddleware } from './middleware/apiSecurityMiddleware'
+import { attackDetectionMiddleware, cleanupSecurityData } from './middleware/attackDetection'
+import { moderateIPAccessControl } from './middleware/ipAccessControl'
 import { connectRedis } from './config/redis'
 import { connectDatabase } from './config/database'
 import { ScheduledTaskService } from './services/scheduledTaskService'
@@ -15,7 +20,11 @@ import { PaymentGatewayService } from './services/paymentGatewayService'
 import { ReportService } from './services/reportService'
 import { ScheduledReportService } from './services/scheduledReportService'
 import { webSocketService } from './services/websocketService'
+import { BackupService } from './services/backupService'
+import { OffsiteBackupService } from './services/offsiteBackupService'
+import { DisasterRecoveryService } from './services/disasterRecoveryService'
 import authRoutes from './routes/auth'
+import mfaRoutes from './routes/mfa'
 import otpRoutes from './routes/otp'
 import paymentRoutes from './routes/payment'
 import roleRoutes from './routes/roles'
@@ -37,7 +46,24 @@ import reportRoutes from './routes/reports'
 import auditRoutes from './routes/audit'
 import securityRoutes from './routes/security'
 import securityMonitoringRoutes from './routes/security-monitoring'
+import securityDashboardRoutes from './routes/security-dashboard'
+import threatDetectionRoutes from './routes/threat-detection'
+import incidentResponseRoutes from './routes/incident-response'
+import siemIntegrationRoutes from './routes/siem-integration'
 import advancedSecurityRoutes from './routes/advanced-security'
+import apiSecurityRoutes from './routes/api-security'
+import transactionRoutes from './routes/transactions'
+import ipManagementRoutes from './routes/ipManagement'
+import vulnerabilityRoutes from './routes/vulnerabilityRoutes'
+import dataEncryptionRoutes from './routes/dataEncryption'
+import accessControlRoutes from './routes/accessControl'
+import abacRoutes from './routes/abac'
+import accessReviewRoutes from './routes/accessReview'
+import backupRoutes from './routes/backup'
+import infrastructureSecurityRoutes from './routes/infrastructure-security'
+import networkSecurityRoutes from './routes/network-security'
+import secretsManagementRoutes from './routes/secrets-management'
+import securityTestingRoutes from './routes/securityTestingRoutes'
 
 // Load environment variables
 dotenv.config()
@@ -47,7 +73,28 @@ const server = createServer(app)
 const PORT = process.env.PORT || 5000
 
 // Security middleware
-app.use(helmet())
+// Use basic helmet for some headers, but disable CSP and frame options as we handle them in our custom middleware
+app.use(helmet({
+  contentSecurityPolicy: false, // We handle this in our custom middleware
+  frameguard: false, // We handle this in our custom middleware
+  referrerPolicy: false, // We handle this in our custom middleware
+  crossOriginEmbedderPolicy: false, // We handle this in our custom middleware
+  crossOriginOpenerPolicy: false, // We handle this in our custom middleware
+  crossOriginResourcePolicy: false // We handle this in our custom middleware
+}))
+
+// Apply comprehensive security headers
+const securityConfig = process.env.NODE_ENV === 'production' 
+  ? productionCSPConfig() 
+  : developmentCSPConfig()
+app.use(securityHeaders(securityConfig))
+
+// Validate security headers are properly set (development only)
+if (process.env.NODE_ENV !== 'production') {
+  app.use(validateSecurityHeaders())
+  app.use(securityHeadersValidationMiddleware())
+}
+
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true
@@ -69,6 +116,29 @@ app.use(compression())
 // Logging middleware
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }))
 
+// IP Access Control middleware (applied early for security)
+app.use('/api/', moderateIPAccessControl)
+
+// API Security middleware
+app.use('/api/', securityContextMiddleware())
+app.use('/api/', attackDetectionMiddleware({
+  enableSQLInjectionDetection: true,
+  enableXSSDetection: true,
+  enableCSRFProtection: true,
+  enableSuspiciousActivityDetection: true,
+  enableBruteForceProtection: true,
+  logSecurityEvents: true,
+  blockSuspiciousRequests: true,
+  maxSuspiciousScore: 75
+}))
+app.use('/api/', apiSecurityMiddleware({
+  enableLogging: true,
+  enableVersionValidation: true,
+  enableSignatureVerification: false, // Enable in production
+  logRequestBody: false, // Enable for debugging
+  logResponseBody: false // Enable for debugging
+}))
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ 
@@ -80,6 +150,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authRoutes)
+app.use('/api/mfa', mfaRoutes)
 app.use('/api/otp', otpRoutes)
 app.use('/api/payments', paymentRoutes)
 app.use('/api/roles', roleRoutes)
@@ -101,7 +172,24 @@ app.use('/api/reports', reportRoutes)
 app.use('/api/audit', auditRoutes)
 app.use('/api/security', securityRoutes)
 app.use('/api/security-monitoring', securityMonitoringRoutes)
+app.use('/api/security-dashboard', securityDashboardRoutes)
+app.use('/api/threat-detection', threatDetectionRoutes)
+app.use('/api/incident-response', incidentResponseRoutes)
+app.use('/api/siem', siemIntegrationRoutes)
 app.use('/api/advanced-security', advancedSecurityRoutes)
+app.use('/api/api-security', apiSecurityRoutes)
+app.use('/api/transactions', transactionRoutes)
+app.use('/api/ip-management', ipManagementRoutes)
+app.use('/api/vulnerability', vulnerabilityRoutes)
+app.use('/api/data-encryption', dataEncryptionRoutes)
+app.use('/api/access-control', accessControlRoutes)
+app.use('/api/abac', abacRoutes)
+app.use('/api/access-review', accessReviewRoutes)
+app.use('/api', backupRoutes)
+app.use('/api/infrastructure-security', infrastructureSecurityRoutes)
+app.use('/api/network-security', networkSecurityRoutes)
+app.use('/api/secrets-management', secretsManagementRoutes)
+app.use('/api/security-testing', securityTestingRoutes)
 
 // Catch-all for undefined API routes
 app.use('/api/*', (req, res) => {
@@ -130,6 +218,18 @@ async function startServer() {
     await ScheduledReportService.initialize()
     logger.info('Scheduled report service initialized')
 
+    // Initialize Backup Service
+    await BackupService.initialize()
+    logger.info('Backup service initialized')
+
+    // Initialize Offsite Backup Service
+    await OffsiteBackupService.initialize()
+    logger.info('Offsite backup service initialized')
+
+    // Initialize Disaster Recovery Service
+    await DisasterRecoveryService.initialize()
+    logger.info('Disaster recovery service initialized')
+
     // Initialize payment gateway
     if (process.env.PAYMENT_GATEWAY_PROVIDER) {
       PaymentGatewayService.initialize({
@@ -149,6 +249,12 @@ async function startServer() {
 
     // Initialize WebSocket service
     webSocketService.initialize(server)
+
+    // Start security data cleanup (every hour)
+    setInterval(() => {
+      cleanupSecurityData()
+      logger.debug('Security data cleanup completed')
+    }, 60 * 60 * 1000) // 1 hour
     logger.info('WebSocket service initialized')
 
     server.listen(PORT, () => {
@@ -167,6 +273,8 @@ process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully')
   ScheduledTaskService.stopAllTasks()
   ScheduledReportService.stopAllScheduledReports()
+  BackupService.stopBackupMonitoring()
+  OffsiteBackupService.stopReplicationMonitoring()
   webSocketService.close()
   process.exit(0)
 })

@@ -7,6 +7,7 @@ import {
   validateSession,
   auditLog 
 } from '../middleware/auth'
+import { validateRequest, limitRequestSize, validateContentType } from '../middleware/inputValidation'
 
 const router = Router()
 
@@ -16,13 +17,29 @@ const router = Router()
 
 // Public routes (no authentication required)
 router.post('/login', 
+  limitRequestSize(1024 * 1024), // 1MB limit
+  validateContentType(['application/json']),
+  validateRequest({ sanitize: true }),
   authRateLimit(),
   authValidation.login,
   auditLog('LOGIN'),
   AuthController.login
 )
 
+router.post('/complete-mfa-login',
+  limitRequestSize(1024 * 1024), // 1MB limit
+  validateContentType(['application/json']),
+  validateRequest({ sanitize: true }),
+  authRateLimit(),
+  authValidation.completeMFALogin,
+  auditLog('COMPLETE_MFA_LOGIN'),
+  AuthController.completeMFALogin
+)
+
 router.post('/verify-otp',
+  limitRequestSize(1024 * 1024), // 1MB limit
+  validateContentType(['application/json']),
+  validateRequest({ sanitize: true }),
   authRateLimit(),
   authValidation.verifyOTP,
   auditLog('VERIFY_OTP'),

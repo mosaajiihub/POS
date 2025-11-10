@@ -1,11 +1,11 @@
 import express from 'express'
 import { ReportController } from '../controllers/reportController'
-import { authenticateToken } from '../middleware/auth'
+import { requireAuth } from '../middleware/auth'
 
 const router = express.Router()
 
 // Apply authentication middleware to all routes
-router.use(authenticateToken)
+router.use(requireAuth)
 
 // Stock Reports
 router.get('/stock/levels', ReportController.getStockLevelReport)

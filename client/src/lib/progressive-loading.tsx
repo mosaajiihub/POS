@@ -6,7 +6,7 @@
 import React from 'react';
 
 // Lazy loading with retry mechanism
-export const createLazyComponent = <T extends React.ComponentType<any>>(
+export const createLazyComponent = <T extends React.ComponentType<any> = React.ComponentType<any>>(
   importFn: () => Promise<{ default: T }>,
   fallback?: React.ComponentType,
   retries = 3
@@ -121,7 +121,7 @@ export interface UseProgressiveDataOptions<T> {
   fallbackData?: T;
 }
 
-export const useProgressiveData = <T>({
+export const useProgressiveData = <T,>({
   fetchFn,
   cacheKey,
   staleTime = 5 * 60 * 1000, // 5 minutes
@@ -251,7 +251,7 @@ export const preloadCriticalResources = (resources: string[]) => {
 };
 
 // Performance monitoring
-export const measurePerformance = (name: string, fn: () => Promise<any>) => {
+export const measurePerformance = (name: string, fn: (...args: any[]) => Promise<any>) => {
   return async (...args: any[]) => {
     const start = performance.now();
     
@@ -339,7 +339,7 @@ export interface VirtualScrollOptions {
   overscan?: number;
 }
 
-export const useVirtualScroll = <T>(
+export const useVirtualScroll = <T,>(
   items: T[],
   { itemHeight, containerHeight, overscan = 5 }: VirtualScrollOptions
 ) => {

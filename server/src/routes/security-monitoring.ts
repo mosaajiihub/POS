@@ -91,4 +91,22 @@ router.post('/alerts/:alertId/acknowledge',
  */
 router.get('/failed-logins', requireManager, SecurityMonitoringController.getFailedLoginAttempts)
 
+/**
+ * @route POST /api/security-monitoring/test-alert
+ * @desc Test alert generation
+ * @access Admin only
+ */
+router.post('/test-alert', 
+  requireAdmin, 
+  auditSecurity('TEST_ALERT', 'security'),
+  SecurityMonitoringController.testAlert
+)
+
+/**
+ * @route GET /api/security-monitoring/status
+ * @desc Get monitoring status
+ * @access Admin, Manager
+ */
+router.get('/status', requireManager, SecurityMonitoringController.getMonitoringStatus)
+
 export default router

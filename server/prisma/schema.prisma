@@ -6,273 +6,328 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
+  id              String     @id @default(cuid())
+  email           String     @unique
   firstName       String
   lastName        String
   passwordHash    String
-  role            UserRole  @default(CASHIER)
+  role            UserRole   @default(CASHIER)
   status          UserStatus @default(PENDING)
-  paymentVerified Boolean   @default(false)
+  paymentVerified Boolean    @default(false)
   otpCode         String?
   otpExpiry       DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  // MFA fields
+  mfaEnabled      Boolean    @default(false)
+  mfaSecret       String?    // TOTP secret key (encrypted)
+  mfaBackupCodes  String?    // JSON array of backup codes (encrypted)
+  mfaSetupAt      DateTime?  // When MFA was first set up
+  mfaLastUsed     DateTime?  // Last time MFA was used
+  // Password security fields
+  passwordHistory String?    // JSON array of previous password hashes
+  passwordChangedAt DateTime? // Last password change
+  failedLoginAttempts Int    @default(0)
+  lockedUntil     DateTime?  // Account lockout expiry
+  lastFailedLogin DateTime?  // Last failed login attempt
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
   lastLogin       DateTime?
-  
+
   // Relations
-  sales           Sale[]
-  auditLogs       AuditLog[]
-  payments        Payment[]
-  verifiedPayments Payment[] @relation("PaymentVerifier")
-  rejectedPayments Payment[] @relation("PaymentRejector")
-  paymentHistory  PaymentHistory[]
-  userRoles       UserRole_Assignment[]
-  createdRoles    Role[]    @relation("RoleCreator")
-  updatedRoles    Role[]    @relation("RoleUpdater")
-  
+  sales            Sale[]
+  auditLogs        AuditLog[]
+  payments         Payment[]
+  verifiedPayments Payment[]             @relation("PaymentVerifier")
+  rejectedPayments Payment[]             @relation("PaymentRejector")
+  paymentHistory   PaymentHistory[]
+  userRoles        UserRole_Assignment[]
+  createdRoles     Role[]                @relation("RoleCreator")
+  updatedRoles     Role[]                @relation("RoleUpdater")
+
   @@map("users")
 }
 
 model Customer {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   firstName     String
   lastName      String
-  email         String?   @unique
+  email         String?  @unique
   phone         String?
   address       String?
   city          String?
   postalCode    String?
-  loyaltyPoints Int       @default(0)
-  creditLimit   Decimal   @default(0)
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
+  loyaltyPoints Int      @default(0)
+  creditLimit   Decimal  @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
   // Relations
-  sales         Sale[]
-  invoices      Invoice[]
-  subscriptions Subscription[]
+  sales               Sale[]
+  invoices            Invoice[]
+  subscriptions       Subscription[]
   serviceAppointments ServiceAppointment[]
-  
+
   @@map("customers")
 }
 
 model Supplier {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   name          String
   contactPerson String?
-  email         String?   @unique
+  email         String?  @unique
   phone         String?
   address       String?
   city          String?
   postalCode    String?
   paymentTerms  String?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
   // Relations
-  products      Product[]
+  products       Product[]
   purchaseOrders PurchaseOrder[]
-  
+
   @@map("suppliers")
 }
 
 model Category {
-  id          String    @id @default(cuid())
-  name        String    @unique
+  id          String   @id @default(cuid())
+  name        String   @unique
   description String?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   // Relations
-  products    Product[]
-  
+  products Product[]
+
   @@map("categories")
 }
 
 model Product {
-  id            String      @id @default(cuid())
-  name          String
-  description   String?
-  sku           String      @unique
-  barcode       String?     @unique
-  costPrice     Decimal
-  sellingPrice  Decimal
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  sku            String   @unique
+  barcode        String?  @unique
+  costPrice      Decimal
+  sellingPrice   Decimal
   wholesalePrice Decimal?
-  stockLevel    Int         @default(0)
-  minStockLevel Int         @default(0)
-  taxRate       Decimal     @default(0)
-  isActive      Boolean     @default(true)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  
+  stockLevel     Int      @default(0)
+  minStockLevel  Int      @default(0)
+  taxRate        Decimal  @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
   // Relations
-  categoryId    String
-  category      Category    @relation(fields: [categoryId], references: [id])
-  supplierId    String
-  supplier      Supplier    @relation(fields: [supplierId], references: [id])
-  
-  saleItems     SaleItem[]
-  purchaseOrderItems PurchaseOrderItem[]
-  stockMovements StockMovement[]
-  invoiceItems  InvoiceItem[]
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+
+  saleItems               SaleItem[]
+  refundItems             RefundItem[]
+  purchaseOrderItems      PurchaseOrderItem[]
+  stockMovements          StockMovement[]
+  invoiceItems            InvoiceItem[]
   serviceAppointmentParts ServiceAppointmentPart[]
-  
+
   @@map("products")
 }
 
 model Sale {
-  id              String      @id @default(cuid())
-  transactionNumber String    @unique
-  subtotal        Decimal
-  taxAmount       Decimal
-  discountAmount  Decimal     @default(0)
-  totalAmount     Decimal
-  paymentMethod   PaymentMethod
-  paymentStatus   PaymentStatus @default(COMPLETED)
-  receiptGenerated Boolean    @default(false)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  
+  id                String        @id @default(cuid())
+  transactionNumber String        @unique
+  subtotal          Decimal
+  taxAmount         Decimal
+  discountAmount    Decimal       @default(0)
+  totalAmount       Decimal
+  paymentMethod     String        // Changed from enum to string for flexibility
+  paymentDetails    Json?         // Store payment method details
+  paymentStatus     PaymentStatus @default(COMPLETED)
+  cashReceived      Decimal?      // For cash payments
+  changeAmount      Decimal?      // Change given to customer
+  status            SaleStatus    @default(COMPLETED) // Transaction status
+  voidReason        String?       // Reason for voiding
+  voidedAt          DateTime?     // When transaction was voided
+  voidedBy          String?       // User who voided the transaction
+  receiptGenerated  Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
   // Relations
-  customerId      String?
-  customer        Customer?   @relation(fields: [customerId], references: [id])
-  cashierId       String
-  cashier         User        @relation(fields: [cashierId], references: [id])
-  
-  items           SaleItem[]
-  
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  cashierId  String
+  cashier    User      @relation(fields: [cashierId], references: [id])
+
+  items   SaleItem[]
+  refunds Refund[]
+
   @@map("sales")
 }
 
 model SaleItem {
-  id          String    @id @default(cuid())
-  quantity    Int
-  unitPrice   Decimal
-  totalPrice  Decimal
-  createdAt   DateTime  @default(now())
-  
+  id         String   @id @default(cuid())
+  quantity   Int
+  unitPrice  Decimal
+  subtotal   Decimal  // quantity * unitPrice
+  taxAmount  Decimal  @default(0)
+  totalPrice Decimal  // subtotal + taxAmount
+  createdAt  DateTime @default(now())
+
   // Relations
-  saleId      String
-  sale        Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product   @relation(fields: [productId], references: [id])
-  
+  saleId    String
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
   @@map("sale_items")
 }
 
-model PurchaseOrder {
-  id            String      @id @default(cuid())
-  orderNumber   String      @unique
-  status        OrderStatus @default(PENDING)
-  totalAmount   Decimal
-  orderDate     DateTime    @default(now())
-  expectedDate  DateTime?
-  receivedDate  DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  
+model Refund {
+  id          String   @id @default(cuid())
+  totalAmount Decimal
+  reason      String
+  processedBy String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   // Relations
-  supplierId    String
-  supplier      Supplier    @relation(fields: [supplierId], references: [id])
-  
-  items         PurchaseOrderItem[]
-  
+  saleId String
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  items RefundItem[]
+
+  @@map("refunds")
+}
+
+model RefundItem {
+  id           String   @id @default(cuid())
+  quantity     Int
+  refundAmount Decimal
+  createdAt    DateTime @default(now())
+
+  // Relations
+  refundId  String
+  refund    Refund  @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@map("refund_items")
+}
+
+model PurchaseOrder {
+  id           String      @id @default(cuid())
+  orderNumber  String      @unique
+  status       OrderStatus @default(PENDING)
+  totalAmount  Decimal
+  orderDate    DateTime    @default(now())
+  expectedDate DateTime?
+  receivedDate DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // Relations
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+
+  items PurchaseOrderItem[]
+
   @@map("purchase_orders")
 }
 
 model PurchaseOrderItem {
-  id            String        @id @default(cuid())
-  quantity      Int
-  unitCost      Decimal
-  totalCost     Decimal
-  receivedQty   Int           @default(0)
-  createdAt     DateTime      @default(now())
-  
+  id          String   @id @default(cuid())
+  quantity    Int
+  unitCost    Decimal
+  totalCost   Decimal
+  receivedQty Int      @default(0)
+  createdAt   DateTime @default(now())
+
   // Relations
   purchaseOrderId String
-  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  productId     String
-  product       Product       @relation(fields: [productId], references: [id])
-  
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+
   @@map("purchase_order_items")
 }
 
 model StockMovement {
-  id            String        @id @default(cuid())
+  id            String       @id @default(cuid())
   type          MovementType
   quantity      Int
   previousStock Int
   newStock      Int
   reason        String?
-  createdAt     DateTime      @default(now())
-  
+  createdAt     DateTime     @default(now())
+
   // Relations
-  productId     String
-  product       Product       @relation(fields: [productId], references: [id])
-  
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
   @@map("stock_movements")
 }
 
 model Invoice {
-  id            String        @id @default(cuid())
-  invoiceNumber String        @unique
-  status        InvoiceStatus @default(DRAFT)
-  subtotal      Decimal
-  taxAmount     Decimal
-  discountAmount Decimal      @default(0)
-  totalAmount   Decimal
-  notes         String?
-  terms         String?
-  dueDate       DateTime
-  issuedDate    DateTime      @default(now())
-  sentDate      DateTime?
-  viewedDate    DateTime?
-  paidDate      DateTime?
-  reminderCount Int           @default(0)
-  lastReminderDate DateTime?
-  paymentMethod PaymentMethod?
-  isRecurring   Boolean       @default(false)
-  recurringInterval String?   // 'monthly', 'quarterly', 'yearly'
-  nextInvoiceDate DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  
+  id                String         @id @default(cuid())
+  invoiceNumber     String         @unique
+  status            InvoiceStatus  @default(DRAFT)
+  subtotal          Decimal
+  taxAmount         Decimal
+  discountAmount    Decimal        @default(0)
+  totalAmount       Decimal
+  notes             String?
+  terms             String?
+  dueDate           DateTime
+  issuedDate        DateTime       @default(now())
+  sentDate          DateTime?
+  viewedDate        DateTime?
+  paidDate          DateTime?
+  reminderCount     Int            @default(0)
+  lastReminderDate  DateTime?
+  paymentMethod     PaymentMethod?
+  isRecurring       Boolean        @default(false)
+  recurringInterval String? // 'monthly', 'quarterly', 'yearly'
+  nextInvoiceDate   DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
   // Relations
-  customerId    String
-  customer      Customer      @relation(fields: [customerId], references: [id])
-  items         InvoiceItem[]
-  payments      InvoicePayment[]
-  paymentLinks  PaymentLink[]
+  customerId          String
+  customer            Customer             @relation(fields: [customerId], references: [id])
+  items               InvoiceItem[]
+  payments            InvoicePayment[]
+  paymentLinks        PaymentLink[]
   subscriptionInvoice SubscriptionInvoice?
-  serviceInvoices ServiceInvoice[]
-  
+  serviceInvoices     ServiceInvoice[]
+
   @@map("invoices")
 }
 
 model InvoiceItem {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   description String
   quantity    Int
   unitPrice   Decimal
   totalPrice  Decimal
-  taxRate     Decimal   @default(0)
-  createdAt   DateTime  @default(now())
-  
+  taxRate     Decimal  @default(0)
+  createdAt   DateTime @default(now())
+
   // Relations
-  invoiceId   String
-  invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  productId   String?
-  product     Product?  @relation(fields: [productId], references: [id])
-  
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+
   @@map("invoice_items")
 }
 
@@ -284,238 +339,238 @@ model InvoicePayment {
   reference     String?
   notes         String?
   createdAt     DateTime      @default(now())
-  
+
   // Relations
-  invoiceId     String
-  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
   @@map("invoice_payments")
 }
 
 model PaymentLink {
-  id          String    @id @default(cuid())
-  invoiceId   String
-  provider    String    // 'stripe', 'paypal', 'square'
-  url         String
-  amount      Decimal
-  currency    String    @default("USD")
-  status      String    @default("active") // 'active', 'expired', 'completed', 'cancelled'
-  expiresAt   DateTime?
-  metadata    Json?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
+  id        String    @id @default(cuid())
+  invoiceId String
+  provider  String // 'stripe', 'paypal', 'square'
+  url       String
+  amount    Decimal
+  currency  String    @default("USD")
+  status    String    @default("active") // 'active', 'expired', 'completed', 'cancelled'
+  expiresAt DateTime?
+  metadata  Json?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
   // Relations
-  invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
   @@map("payment_links")
 }
 
 model Subscription {
-  id                String    @id @default(cuid())
-  customerId        String
-  planName          String
-  planDescription   String?
-  amount            Decimal
-  currency          String    @default("USD")
-  interval          String    // 'monthly', 'quarterly', 'yearly'
-  status            String    @default("active") // 'active', 'paused', 'cancelled', 'expired'
-  startDate         DateTime  @default(now())
-  endDate           DateTime?
-  nextBillingDate   DateTime
-  lastBillingDate   DateTime?
-  trialEndDate      DateTime?
-  cancelledAt       DateTime?
+  id                 String    @id @default(cuid())
+  customerId         String
+  planName           String
+  planDescription    String?
+  amount             Decimal
+  currency           String    @default("USD")
+  interval           String // 'monthly', 'quarterly', 'yearly'
+  status             String    @default("active") // 'active', 'paused', 'cancelled', 'expired'
+  startDate          DateTime  @default(now())
+  endDate            DateTime?
+  nextBillingDate    DateTime
+  lastBillingDate    DateTime?
+  trialEndDate       DateTime?
+  cancelledAt        DateTime?
   cancellationReason String?
-  metadata          Json?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
+  metadata           Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
   // Relations
-  customer          Customer  @relation(fields: [customerId], references: [id])
-  invoices          SubscriptionInvoice[]
-  
+  customer Customer              @relation(fields: [customerId], references: [id])
+  invoices SubscriptionInvoice[]
+
   @@map("subscriptions")
 }
 
 model SubscriptionInvoice {
-  id             String       @id @default(cuid())
-  subscriptionId String
-  invoiceId      String       @unique
+  id                 String   @id @default(cuid())
+  subscriptionId     String
+  invoiceId          String   @unique
   billingPeriodStart DateTime
   billingPeriodEnd   DateTime
-  createdAt      DateTime     @default(now())
-  
+  createdAt          DateTime @default(now())
+
   // Relations
-  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  invoice        Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
   @@map("subscription_invoices")
 }
 
 model Expense {
-  id            String        @id @default(cuid())
-  description   String
-  amount        Decimal
-  category      String
-  vendor        String?
-  receiptUrl    String?
-  expenseDate   DateTime
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  
+  id          String   @id @default(cuid())
+  description String
+  amount      Decimal
+  category    String
+  vendor      String?
+  receiptUrl  String?
+  expenseDate DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   @@map("expenses")
 }
 
 model ServiceType {
-  id            String    @id @default(cuid())
-  name          String    @unique
-  description   String?
-  basePrice     Decimal
-  estimatedDuration Int   // in minutes
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
+  id                String   @id @default(cuid())
+  name              String   @unique
+  description       String?
+  basePrice         Decimal
+  estimatedDuration Int // in minutes
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
   // Relations
-  appointments  ServiceAppointment[]
-  
+  appointments ServiceAppointment[]
+
   @@map("service_types")
 }
 
 model Technician {
-  id            String    @id @default(cuid())
-  firstName     String
-  lastName      String
-  email         String?   @unique
-  phone         String?
-  specialties   String[]  // Array of specialties
-  hourlyRate    Decimal
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String?  @unique
+  phone       String?
+  specialties String[] // Array of specialties
+  hourlyRate  Decimal
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   // Relations
-  appointments  ServiceAppointment[]
-  availability  TechnicianAvailability[]
-  
+  appointments ServiceAppointment[]
+  availability TechnicianAvailability[]
+
   @@map("technicians")
 }
 
 model TechnicianAvailability {
-  id            String    @id @default(cuid())
-  technicianId  String
-  dayOfWeek     Int       // 0 = Sunday, 1 = Monday, etc.
-  startTime     String    // HH:MM format
-  endTime       String    // HH:MM format
-  isAvailable   Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
+  id           String   @id @default(cuid())
+  technicianId String
+  dayOfWeek    Int // 0 = Sunday, 1 = Monday, etc.
+  startTime    String // HH:MM format
+  endTime      String // HH:MM format
+  isAvailable  Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
   // Relations
-  technician    Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
-  
+  technician Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+
   @@unique([technicianId, dayOfWeek])
   @@map("technician_availability")
 }
 
 model ServiceAppointment {
-  id              String              @id @default(cuid())
-  appointmentNumber String            @unique
-  customerId      String
-  technicianId    String
-  serviceTypeId   String
-  scheduledDate   DateTime
-  scheduledTime   String              // HH:MM format
-  estimatedDuration Int               // in minutes
-  actualStartTime DateTime?
-  actualEndTime   DateTime?
-  status          ServiceAppointmentStatus @default(SCHEDULED)
-  notes           String?
-  customerNotes   String?
-  internalNotes   String?
-  laborCost       Decimal             @default(0)
-  partsCost       Decimal             @default(0)
-  totalCost       Decimal             @default(0)
-  warrantyPeriod  Int?                // in days
-  warrantyExpiry  DateTime?
-  followUpDate    DateTime?
-  reminderSent    Boolean             @default(false)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  
+  id                String                   @id @default(cuid())
+  appointmentNumber String                   @unique
+  customerId        String
+  technicianId      String
+  serviceTypeId     String
+  scheduledDate     DateTime
+  scheduledTime     String // HH:MM format
+  estimatedDuration Int // in minutes
+  actualStartTime   DateTime?
+  actualEndTime     DateTime?
+  status            ServiceAppointmentStatus @default(SCHEDULED)
+  notes             String?
+  customerNotes     String?
+  internalNotes     String?
+  laborCost         Decimal                  @default(0)
+  partsCost         Decimal                  @default(0)
+  totalCost         Decimal                  @default(0)
+  warrantyPeriod    Int? // in days
+  warrantyExpiry    DateTime?
+  followUpDate      DateTime?
+  reminderSent      Boolean                  @default(false)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
   // Relations
-  customer        Customer            @relation(fields: [customerId], references: [id])
-  technician      Technician          @relation(fields: [technicianId], references: [id])
-  serviceType     ServiceType         @relation(fields: [serviceTypeId], references: [id])
-  parts           ServiceAppointmentPart[]
-  invoices        ServiceInvoice[]
-  
+  customer    Customer                 @relation(fields: [customerId], references: [id])
+  technician  Technician               @relation(fields: [technicianId], references: [id])
+  serviceType ServiceType              @relation(fields: [serviceTypeId], references: [id])
+  parts       ServiceAppointmentPart[]
+  invoices    ServiceInvoice[]
+
   @@map("service_appointments")
 }
 
 model ServiceAppointmentPart {
-  id              String            @id @default(cuid())
-  appointmentId   String
-  productId       String
-  quantity        Int
-  unitCost        Decimal
-  totalCost       Decimal
-  createdAt       DateTime          @default(now())
-  
+  id            String   @id @default(cuid())
+  appointmentId String
+  productId     String
+  quantity      Int
+  unitCost      Decimal
+  totalCost     Decimal
+  createdAt     DateTime @default(now())
+
   // Relations
-  appointment     ServiceAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  product         Product           @relation(fields: [productId], references: [id])
-  
+  appointment ServiceAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  product     Product            @relation(fields: [productId], references: [id])
+
   @@map("service_appointment_parts")
 }
 
 model ServiceInvoice {
-  id              String            @id @default(cuid())
-  appointmentId   String
-  invoiceId       String
-  laborHours      Decimal           @default(0)
-  laborRate       Decimal           @default(0)
-  laborCost       Decimal           @default(0)
-  partsCost       Decimal           @default(0)
-  totalCost       Decimal           @default(0)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  
+  id            String   @id @default(cuid())
+  appointmentId String
+  invoiceId     String
+  laborHours    Decimal  @default(0)
+  laborRate     Decimal  @default(0)
+  laborCost     Decimal  @default(0)
+  partsCost     Decimal  @default(0)
+  totalCost     Decimal  @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
   // Relations
-  appointment     ServiceAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  invoice         Invoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  
+  appointment ServiceAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  invoice     Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
   @@unique([appointmentId])
   @@map("service_invoices")
 }
 
 model AuditLog {
-  id          String    @id @default(cuid())
-  action      String
-  tableName   String
-  recordId    String
-  oldValues   Json?
-  newValues   Json?
-  ipAddress   String?
-  userAgent   String?
-  createdAt   DateTime  @default(now())
-  
+  id        String   @id @default(cuid())
+  action    String
+  tableName String
+  recordId  String
+  oldValues Json?
+  newValues Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
   // Relations
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
   @@map("audit_logs")
 }
 
 model RateLimit {
-  id        String    @id @default(cuid())
-  key       String    @unique
-  count     Int       @default(1)
-  expiresAt DateTime  @map("expires_at")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  
+  id        String   @id @default(cuid())
+  key       String   @unique
+  count     Int      @default(1)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
   @@map("rate_limits")
 }
 
@@ -537,99 +592,100 @@ model Payment {
   rejectionReason String?       @map("rejection_reason")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
-  
+
   // Relations
-  user            User          @relation(fields: [userId], references: [id])
-  verifier        User?         @relation("PaymentVerifier", fields: [verifiedBy], references: [id])
-  rejector        User?         @relation("PaymentRejector", fields: [rejectedBy], references: [id])
-  
+  user           User             @relation(fields: [userId], references: [id])
+  verifier       User?            @relation("PaymentVerifier", fields: [verifiedBy], references: [id])
+  rejector       User?            @relation("PaymentRejector", fields: [rejectedBy], references: [id])
+  PaymentHistory PaymentHistory[]
+
   @@map("payments")
 }
 
 model PaymentHistory {
-  id          String    @id @default(cuid())
-  paymentId   String    @map("payment_id")
+  id          String   @id @default(cuid())
+  paymentId   String   @map("payment_id")
   action      String
-  oldStatus   String?   @map("old_status")
-  newStatus   String    @map("new_status")
-  performedBy String    @map("performed_by")
+  oldStatus   String?  @map("old_status")
+  newStatus   String   @map("new_status")
+  performedBy String   @map("performed_by")
   reason      String?
   metadata    Json?
-  createdAt   DateTime  @default(now()) @map("created_at")
-  
+  createdAt   DateTime @default(now()) @map("created_at")
+
   // Relations
-  payment     Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  performer   User      @relation(fields: [performedBy], references: [id])
-  
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  performer User    @relation(fields: [performedBy], references: [id])
+
   @@map("payment_history")
 }
 
 model Role {
-  id          String    @id @default(cuid())
-  name        String    @unique
+  id          String   @id @default(cuid())
+  name        String   @unique
   displayName String
   description String?
-  isSystem    Boolean   @default(false)
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   createdBy   String
   updatedBy   String?
-  
+
   // Relations
-  creator     User      @relation("RoleCreator", fields: [createdBy], references: [id])
-  updater     User?     @relation("RoleUpdater", fields: [updatedBy], references: [id])
+  creator     User                  @relation("RoleCreator", fields: [createdBy], references: [id])
+  updater     User?                 @relation("RoleUpdater", fields: [updatedBy], references: [id])
   permissions RolePermission[]
   userRoles   UserRole_Assignment[]
-  
+
   @@map("roles")
 }
 
 model Permission {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   resource    String
   action      String
   displayName String
   description String?
-  isSystem    Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   // Relations
   rolePermissions RolePermission[]
-  
+
   @@unique([resource, action])
   @@map("permissions")
 }
 
 model RolePermission {
-  id           String     @id @default(cuid())
+  id           String   @id @default(cuid())
   roleId       String
   permissionId String
-  granted      Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  
+  granted      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
   // Relations
-  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-  
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
   @@unique([roleId, permissionId])
   @@map("role_permissions")
 }
 
 model UserRole_Assignment {
-  id        String   @id @default(cuid())
-  userId    String
-  roleId    String
+  id         String   @id @default(cuid())
+  userId     String
+  roleId     String
   assignedAt DateTime @default(now())
   assignedBy String?
-  isActive  Boolean  @default(true)
-  
+  isActive   Boolean  @default(true)
+
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
   @@unique([userId, roleId])
   @@map("user_role_assignments")
 }
@@ -660,6 +716,13 @@ enum PaymentStatus {
   PENDING
   COMPLETED
   FAILED
+  REFUNDED
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  VOIDED
   REFUNDED
 }
 
@@ -696,4 +759,3 @@ enum ServiceAppointmentStatus {
   CANCELLED
   NO_SHOW
 }
-

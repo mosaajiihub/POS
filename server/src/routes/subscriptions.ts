@@ -1,11 +1,11 @@
 import { Router } from 'express'
 import { SubscriptionController, subscriptionValidation } from '../controllers/subscriptionController'
-import { authenticateToken } from '../middleware/auth'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
 // Apply authentication middleware to all routes
-router.use(authenticateToken)
+router.use(requireAuth)
 
 /**
  * Subscription Management Routes

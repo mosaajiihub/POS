@@ -461,4 +461,89 @@ export class SecurityMonitoringController {
       })
     }
   }
+
+  /**
+   * Test alert generation (for testing purposes)
+   */
+  static async testAlert(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required'
+          }
+        })
+      }
+
+      const { severity = 'MEDIUM', type = 'TEST_ALERT', message } = req.body
+
+      // Import SecurityAlertingService
+      const { SecurityAlertingService } = await import('../services/securityAlertingService')
+      const { AlertSeverity, AlertType } = await import('../config/securityMonitoring')
+
+      await SecurityAlertingService.createAlert({
+        type: type as AlertType,
+        severity: severity as AlertSeverity,
+        title: 'Test Security Alert',
+        message: message || 'This is a test security alert generated for testing purposes',
+        details: {
+          generatedBy: req.user.userId,
+          timestamp: new Date().toISOString(),
+          testMode: true
+        },
+        affectedResources: ['test-resource']
+      })
+
+      res.json({
+        success: true,
+        message: 'Test alert generated successfully'
+      })
+    } catch (error) {
+      logger.error('Test alert error:', error)
+      res.status(500).json({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'An error occurred while generating test alert'
+        }
+      })
+    }
+  }
+
+  /**
+   * Get monitoring status
+   */
+  static async getMonitoringStatus(req: Request, res: Response) {
+    try {
+      const { getSecurityMonitoringConfig } = await import('../config/securityMonitoring')
+      const config = getSecurityMonitoringConfig()
+
+      res.json({
+        success: true,
+        data: {
+          status: 'active',
+          config: {
+            thresholds: config.thresholds,
+            notifications: {
+              email: config.notifications.email.enabled,
+              sms: config.notifications.sms.enabled,
+              webhook: config.notifications.webhook.enabled
+            },
+            intervals: config.intervals,
+            retention: config.retention
+          },
+          uptime: process.uptime(),
+          timestamp: new Date().toISOString()
+        }
+      })
+    } catch (error) {
+      logger.error('Get monitoring status error:', error)
+      res.status(500).json({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'An error occurred while retrieving monitoring status'
+        }
+      })
+    }
+  }
 }

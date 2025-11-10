@@ -3,6 +3,10 @@ import { prisma } from '../config/database'
 import { SessionManager, OTPManager } from '../config/redis'
 import { PasswordUtils, TokenUtils, TokenPair } from '../utils/auth'
 import { logger } from '../utils/logger'
+import { MFAService } from './mfaService'
+import { PasswordSecurityService } from './passwordSecurityService'
+import { BruteForceProtectionService } from './bruteForceProtectionService'
+import { SessionSecurityService } from './sessionSecurityService'
 
 export interface LoginCredentials {
   email: string
@@ -23,6 +27,8 @@ export interface AuthResult {
   user?: Omit<User, 'passwordHash'>
   tokens?: TokenPair
   sessionId?: string
+  requiresMFA?: boolean
+  tempUserId?: string // For MFA verification step
 }
 
 export interface OTPResult {
@@ -40,11 +46,22 @@ export interface OTPResult {
  */
 export class AuthService {
   /**
-   * Authenticate user with email and password
+   * Authenticate user with email and password (enhanced with security features)
    */
   static async login(credentials: LoginCredentials, ipAddress?: string, userAgent?: string): Promise<AuthResult> {
     try {
       const { email, password } = credentials
+
+      // Check IP-based blocking first
+      if (ipAddress) {
+        const ipBlockResult = await BruteForceProtectionService.checkIPBlock(ipAddress)
+        if (ipBlockResult.isBlocked) {
+          return {
+            success: false,
+            message: ipBlockResult.reason
+          }
+        }
+      }
 
       // Find user by email
       const user = await prisma.user.findUnique({
@@ -53,9 +70,22 @@ export class AuthService {
 
       if (!user) {
         logger.warn(`Login attempt with non-existent email: ${email}`)
+        // Still record IP attempt for non-existent users
+        if (ipAddress) {
+          await BruteForceProtectionService.recordIPAttempt(ipAddress, false)
+        }
         return {
           success: false,
           message: 'Invalid email or password'
+        }
+      }
+
+      // Check user-based lockout
+      const lockoutResult = await BruteForceProtectionService.checkUserLockout(user.id)
+      if (lockoutResult.isBlocked) {
+        return {
+          success: false,
+          message: lockoutResult.message
         }
       }
 
@@ -63,6 +93,10 @@ export class AuthService {
       const isPasswordValid = await PasswordUtils.verifyPassword(password, user.passwordHash)
       if (!isPasswordValid) {
         logger.warn(`Invalid password attempt for user: ${user.id}`)
+        
+        // Record failed attempt
+        await BruteForceProtectionService.recordFailedAttempt(user.id, ipAddress)
+        
         return {
           success: false,
           message: 'Invalid email or password'
@@ -87,15 +121,27 @@ export class AuthService {
         }
       }
 
+      // Check if MFA is enabled
+      if (user.mfaEnabled) {
+        // Store temporary login state for MFA verification
+        const tempToken = TokenUtils.generateTempToken(user.id)
+        
+        return {
+          success: false, // Not fully successful until MFA is verified
+          message: 'MFA verification required',
+          requiresMFA: true,
+          tempUserId: tempToken
+        }
+      }
+
+      // Record successful login
+      await BruteForceProtectionService.recordSuccessfulLogin(user.id, ipAddress)
+
+      // Create secure session
+      const { sessionId } = await SessionSecurityService.createSecureSession(user.id, ipAddress, userAgent)
+
       // Generate tokens
       const tokens = TokenUtils.generateTokenPair(user)
-
-      // Create session
-      const sessionId = await SessionManager.createSession(user.id, {
-        ipAddress,
-        userAgent,
-        loginAt: new Date().toISOString()
-      })
 
       // Update last login
       await prisma.user.update({
@@ -104,7 +150,7 @@ export class AuthService {
       })
 
       // Remove sensitive data
-      const { passwordHash, ...userWithoutPassword } = user
+      const { passwordHash, mfaSecret, mfaBackupCodes, passwordHistory, ...userWithoutPassword } = user
 
       logger.info(`User logged in successfully: ${user.id}`)
 
@@ -120,6 +166,82 @@ export class AuthService {
       return {
         success: false,
         message: 'An error occurred during login'
+      }
+    }
+  }
+
+  /**
+   * Complete MFA login process
+   */
+  static async completeMFALogin(
+    tempUserId: string, 
+    mfaToken: string, 
+    ipAddress?: string, 
+    userAgent?: string
+  ): Promise<AuthResult> {
+    try {
+      // Verify temp token and get user ID
+      const userId = TokenUtils.verifyTempToken(tempUserId)
+      if (!userId) {
+        return {
+          success: false,
+          message: 'Invalid or expired MFA session'
+        }
+      }
+
+      // Verify MFA token
+      const mfaResult = await MFAService.verifyMFA(userId, mfaToken)
+      if (!mfaResult.success) {
+        return {
+          success: false,
+          message: mfaResult.message
+        }
+      }
+
+      // Get user data
+      const user = await prisma.user.findUnique({
+        where: { id: userId }
+      })
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found'
+        }
+      }
+
+      // Record successful login
+      await BruteForceProtectionService.recordSuccessfulLogin(user.id, ipAddress)
+
+      // Create secure session
+      const { sessionId } = await SessionSecurityService.createSecureSession(user.id, ipAddress, userAgent)
+
+      // Generate tokens
+      const tokens = TokenUtils.generateTokenPair(user)
+
+      // Update last login
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLogin: new Date() }
+      })
+
+      // Remove sensitive data
+      const { passwordHash, mfaSecret, mfaBackupCodes, passwordHistory, ...userWithoutPassword } = user
+
+      logger.info(`User completed MFA login successfully: ${user.id}`)
+
+      return {
+        success: true,
+        message: mfaResult.isBackupCode ? 'Login successful using backup code' : 'Login successful',
+        user: userWithoutPassword,
+        tokens,
+        sessionId
+      }
+    } catch (error) {
+      logger.error('Complete MFA login error:', error)
+      return {
+        success: false,
+        message: 'An error occurred during MFA login'
       }
     }
   }
@@ -445,13 +567,13 @@ export class AuthService {
   }
 
   /**
-   * Change user password
+   * Change user password (enhanced with security validation)
    */
   static async changePassword(
     userId: string, 
     currentPassword: string, 
     newPassword: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; violations?: string[] }> {
     try {
       // Find user
       const user = await prisma.user.findUnique({
@@ -474,26 +596,51 @@ export class AuthService {
         }
       }
 
-      // Validate new password strength
-      const passwordValidation = PasswordUtils.validatePasswordStrength(newPassword)
-      if (!passwordValidation.valid) {
+      // Comprehensive password validation
+      const validation = await PasswordSecurityService.validatePassword(newPassword, userId)
+
+      // Check policy compliance
+      if (!validation.policy.isValid) {
         return {
           success: false,
-          message: passwordValidation.message
+          message: 'Password does not meet security requirements',
+          violations: validation.policy.violations
+        }
+      }
+
+      // Check password strength
+      if (!validation.strength.isValid) {
+        return {
+          success: false,
+          message: 'Password is not strong enough',
+          violations: validation.strength.feedback
+        }
+      }
+
+      // Check for password reuse
+      if (validation.history?.isReused) {
+        return {
+          success: false,
+          message: validation.history.message
+        }
+      }
+
+      // Check for breached passwords
+      if (validation.breach.isBreached) {
+        return {
+          success: false,
+          message: validation.breach.message
         }
       }
 
       // Hash new password
       const newPasswordHash = await PasswordUtils.hashPassword(newPassword)
 
-      // Update password
-      await prisma.user.update({
-        where: { id: userId },
-        data: { passwordHash: newPasswordHash }
-      })
+      // Update password and history
+      await PasswordSecurityService.updatePasswordHistory(userId, newPasswordHash)
 
       // Logout from all devices for security
-      await SessionManager.deleteUserSessions(userId)
+      await SessionSecurityService.invalidateAllUserSessions(userId)
 
       logger.info(`Password changed for user: ${userId}`)
 

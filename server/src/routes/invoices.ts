@@ -1,11 +1,11 @@
 import { Router } from 'express'
 import { InvoiceController, invoiceValidation } from '../controllers/invoiceController'
-import { authenticateToken } from '../middleware/auth'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
 // Apply authentication middleware to all routes
-router.use(authenticateToken)
+router.use(requireAuth)
 
 /**
  * Invoice Management Routes

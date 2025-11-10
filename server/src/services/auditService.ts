@@ -229,6 +229,7 @@ export class AuditService {
     userId: string,
     roleId: string,
     roleName: string,
+    reason?: string,
     ipAddress?: string,
     userAgent?: string
   ): Promise<void> {
@@ -240,7 +241,8 @@ export class AuditService {
       newValues: {
         targetUserId: userId,
         roleId,
-        roleName
+        roleName,
+        reason
       },
       ipAddress,
       userAgent
@@ -255,6 +257,7 @@ export class AuditService {
     userId: string,
     roleId: string,
     roleName: string,
+    reason?: string,
     ipAddress?: string,
     userAgent?: string
   ): Promise<void> {
@@ -266,7 +269,8 @@ export class AuditService {
       oldValues: {
         targetUserId: userId,
         roleId,
-        roleName
+        roleName,
+        reason
       },
       ipAddress,
       userAgent

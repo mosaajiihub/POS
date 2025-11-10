@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Theme, ThemeContextType, applyTheme, getSystemTheme, getStoredTheme, setStoredTheme } from '@/lib/theme';
+import { Theme, ThemeContextType, applyTheme, getSystemTheme, getStoredTheme, setStoredTheme } from '../../lib/theme';
 
 const ThemeProviderContext = createContext<ThemeContextType | undefined>(undefined);
 

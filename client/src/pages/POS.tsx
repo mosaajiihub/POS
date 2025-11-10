@@ -52,6 +52,13 @@ export default function POS() {
     fetchProducts()
   }, [fetchProducts])
 
+  // Define handlers before they're used in keyboard shortcuts
+  const handleCheckout = useCallback(() => {
+    if (cartItems.length > 0) {
+      setShowPaymentModal(true)
+    }
+  }, [cartItems.length])
+
   // Enhanced keyboard shortcuts for POS
   useKeyboardShortcuts({
     shortcuts: [
@@ -70,8 +77,7 @@ export default function POS() {
         action: () => {
           const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement
           searchInput?.focus()
-        },
-        global: true
+        }
       },
       {
         key: 'F4',
@@ -87,15 +93,13 @@ export default function POS() {
       {
         key: 'F5',
         description: 'Checkout',
-        action: handleCheckout,
-        disabled: cartItems.length === 0
+        action: handleCheckout
       },
       {
         key: 'Enter',
         ctrlKey: true,
         description: 'Checkout',
-        action: handleCheckout,
-        disabled: cartItems.length === 0
+        action: handleCheckout
       },
       {
         key: 'Escape',
@@ -119,12 +123,6 @@ export default function POS() {
     ],
     enabled: true
   })
-
-  const handleCheckout = () => {
-    if (cartItems.length > 0) {
-      setShowPaymentModal(true)
-    }
-  }
 
   const handlePaymentComplete = (saleData: any) => {
     setCompletedSale(saleData)

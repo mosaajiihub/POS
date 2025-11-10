@@ -56,6 +56,7 @@ interface TransactionStore {
   processRefund: (transactionId: string, refundItems: RefundItem[], reason: string) => Promise<Refund>
   
   // Transaction queries
+  loadTransactions: (filters?: { startDate?: Date; endDate?: Date; customerId?: string; status?: string }) => Promise<void>
   getTransaction: (transactionId: string) => Transaction | undefined
   getTransactionsByDate: (date: Date) => Transaction[]
   getTodaysTransactions: () => Transaction[]
@@ -88,47 +89,50 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
         throw new Error(validation.error)
       }
 
-      const transaction: Transaction = {
-        id: Date.now().toString(),
-        transactionNumber: `TXN-${Date.now()}`,
-        cashierId: 'current-user', // This would come from auth store
-        items: cartItems,
-        subtotal,
-        taxAmount,
-        discountAmount: 0,
-        totalAmount: total,
-        paymentMethod,
-        paymentStatus: 'pending',
-        cashReceived,
-        changeAmount: paymentMethod.type === 'cash' && cashReceived ? cashReceived - total : 0,
-        timestamp: new Date(),
-        refunds: [],
-        receiptGenerated: false
+      // Prepare transaction data for API
+      const transactionData = {
+        customerId: undefined, // Could be set if customer is selected
+        items: cartItems.map(item => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+          unitPrice: item.product.sellingPrice
+        })),
+        paymentMethod: {
+          type: paymentMethod.type,
+          details: paymentMethod.details || {}
+        },
+        cashReceived
       }
 
-      // Simulate payment processing delay
-      await new Promise(resolve => setTimeout(resolve, 1500))
-
-      // Process payment based on method
-      const paymentResult = await get().processPayment(transaction)
+      // Create transaction via API
+      const response = await transactionApi.createTransaction(transactionData)
       
-      if (paymentResult.success) {
-        transaction.paymentStatus = 'completed'
-        
-        // Update inventory (in a real app, this would be an API call)
-        get().updateInventoryAfterSale(cartItems)
-        
-        set(state => ({
-          transactions: [...state.transactions, transaction],
-          currentTransaction: transaction,
-          isProcessing: false
-        }))
-
-        return transaction
-      } else {
-        transaction.paymentStatus = 'failed'
-        throw new Error(paymentResult.error || 'Payment processing failed')
+      // Convert API response to local Transaction format
+      const transaction: Transaction = {
+        id: response.transaction.id,
+        transactionNumber: response.transaction.transactionNumber,
+        cashierId: response.transaction.cashierId,
+        items: cartItems, // Keep the cart items format for UI consistency
+        subtotal: Number(response.transaction.subtotal),
+        taxAmount: Number(response.transaction.taxAmount),
+        discountAmount: Number(response.transaction.discountAmount || 0),
+        totalAmount: Number(response.transaction.totalAmount),
+        paymentMethod,
+        paymentStatus: response.transaction.status === 'COMPLETED' ? 'completed' : 'pending',
+        cashReceived: response.transaction.cashReceived ? Number(response.transaction.cashReceived) : undefined,
+        changeAmount: response.transaction.changeAmount ? Number(response.transaction.changeAmount) : 0,
+        timestamp: new Date(response.transaction.createdAt),
+        refunds: [],
+        receiptGenerated: response.transaction.receiptGenerated
       }
+      
+      set(state => ({
+        transactions: [...state.transactions, transaction],
+        currentTransaction: transaction,
+        isProcessing: false
+      }))
+
+      return transaction
     } catch (error) {
       set({ 
         isProcessing: false, 
@@ -179,11 +183,8 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
         throw new Error('Cannot void transaction with existing refunds')
       }
 
-      // Simulate void processing
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      // Restore inventory
-      get().restoreInventoryAfterVoid(transaction.items)
+      // Void transaction via API
+      const response = await transactionApi.voidTransaction(transactionId, { reason })
 
       set(state => ({
         transactions: state.transactions.map(t =>
@@ -192,8 +193,8 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
                 ...t,
                 paymentStatus: 'voided' as const,
                 voidReason: reason,
-                voidedAt: new Date(),
-                voidedBy: 'current-user'
+                voidedAt: new Date(response.transaction.voidedAt),
+                voidedBy: response.transaction.voidedBy
               }
             : t
         ),
@@ -234,21 +235,27 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
         throw new Error('Refund amount exceeds transaction total')
       }
 
-      // Simulate refund processing
-      await new Promise(resolve => setTimeout(resolve, 1500))
-
-      const refund: Refund = {
-        id: Date.now().toString(),
-        originalTransactionId: transactionId,
-        items: refundItems,
-        refundAmount,
-        reason,
-        timestamp: new Date(),
-        processedBy: 'current-user'
+      // Process refund via API
+      const refundData = {
+        items: refundItems.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          refundAmount: item.refundAmount
+        })),
+        reason
       }
 
-      // Restore inventory for refunded items
-      get().restoreInventoryAfterRefund(refundItems)
+      const response = await transactionApi.processRefund(transactionId, refundData)
+
+      const refund: Refund = {
+        id: response.refund.id,
+        originalTransactionId: transactionId,
+        items: refundItems,
+        refundAmount: Number(response.refund.totalAmount),
+        reason: response.refund.reason,
+        timestamp: new Date(response.refund.createdAt),
+        processedBy: response.refund.processedBy
+      }
 
       set(state => ({
         transactions: state.transactions.map(t =>
@@ -256,7 +263,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
             ? {
                 ...t,
                 refunds: [...t.refunds, refund],
-                paymentStatus: totalRefunded + refundAmount >= t.totalAmount ? 'refunded' as const : t.paymentStatus
+                paymentStatus: response.transaction.status === 'REFUNDED' ? 'refunded' as const : t.paymentStatus
               }
             : t
         ),
@@ -290,6 +297,73 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
 
   getTodaysTransactions: () => {
     return get().getTransactionsByDate(new Date())
+  },
+
+  loadTransactions: async (filters?: { startDate?: Date; endDate?: Date; customerId?: string; status?: string }) => {
+    set({ isProcessing: true, error: null })
+
+    try {
+      const response = await transactionApi.getTransactions(filters)
+      
+      // Convert API transactions to local format
+      const transactions: Transaction[] = response.transactions.map((apiTransaction: any) => ({
+        id: apiTransaction.id,
+        transactionNumber: apiTransaction.transactionNumber,
+        cashierId: apiTransaction.cashierId,
+        customerId: apiTransaction.customerId,
+        items: apiTransaction.items.map((item: any) => ({
+          product: {
+            id: item.product.id,
+            name: item.product.name,
+            sellingPrice: Number(item.unitPrice),
+            taxRate: Number(item.product.taxRate || 0)
+          },
+          quantity: item.quantity,
+          subtotal: Number(item.subtotal)
+        })),
+        subtotal: Number(apiTransaction.subtotal),
+        taxAmount: Number(apiTransaction.taxAmount),
+        discountAmount: Number(apiTransaction.discountAmount || 0),
+        totalAmount: Number(apiTransaction.totalAmount),
+        paymentMethod: {
+          type: apiTransaction.paymentMethod,
+          name: apiTransaction.paymentMethod,
+          details: apiTransaction.paymentDetails
+        },
+        paymentStatus: apiTransaction.status === 'COMPLETED' ? 'completed' : 
+                      apiTransaction.status === 'VOIDED' ? 'voided' :
+                      apiTransaction.status === 'REFUNDED' ? 'refunded' : 'pending',
+        cashReceived: apiTransaction.cashReceived ? Number(apiTransaction.cashReceived) : undefined,
+        changeAmount: apiTransaction.changeAmount ? Number(apiTransaction.changeAmount) : 0,
+        timestamp: new Date(apiTransaction.createdAt),
+        voidReason: apiTransaction.voidReason,
+        voidedAt: apiTransaction.voidedAt ? new Date(apiTransaction.voidedAt) : undefined,
+        voidedBy: apiTransaction.voidedBy,
+        refunds: apiTransaction.refunds?.map((refund: any) => ({
+          id: refund.id,
+          originalTransactionId: apiTransaction.id,
+          items: refund.items.map((item: any) => ({
+            productId: item.productId,
+            productName: item.product.name,
+            quantity: item.quantity,
+            refundAmount: Number(item.refundAmount)
+          })),
+          refundAmount: Number(refund.totalAmount),
+          reason: refund.reason,
+          timestamp: new Date(refund.createdAt),
+          processedBy: refund.processedBy
+        })) || [],
+        receiptGenerated: apiTransaction.receiptGenerated
+      }))
+
+      set({ transactions, isProcessing: false })
+    } catch (error) {
+      set({ 
+        isProcessing: false, 
+        error: error instanceof Error ? error.message : 'Failed to load transactions' 
+      })
+      throw error
+    }
   },
 
   generateReceipt: (transactionId: string) => {
@@ -352,68 +426,5 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     return { isValid: true }
   },
 
-  // Helper methods (in a real app, these would be API calls)
-  processPayment: async (transaction: Transaction) => {
-    // Simulate different payment processing scenarios
-    const random = Math.random()
-    
-    if (random < 0.05) { // 5% failure rate for demo
-      return { success: false, error: 'Payment declined' }
-    }
 
-    return { success: true }
-  },
-
-  updateInventoryAfterSale: async (items: CartItem[]) => {
-    try {
-      // Convert cart items to sale items format for stock service
-      const saleItems = items.map(item => ({
-        productId: item.product.id,
-        quantity: item.quantity
-      }))
-
-      await stockApi.processSale(saleItems)
-      console.log('Inventory updated successfully after sale')
-    } catch (error) {
-      console.error('Error updating inventory after sale:', error)
-      // In a real app, you might want to handle this error more gracefully
-      // For now, we'll just log it and continue
-    }
-  },
-
-  restoreInventoryAfterVoid: async (items: CartItem[]) => {
-    try {
-      // For void transactions, we need to add the stock back
-      for (const item of items) {
-        await stockApi.updateStock({
-          productId: item.product.id,
-          quantity: item.quantity,
-          type: 'RETURN',
-          reason: 'Transaction voided'
-        })
-      }
-
-      console.log('Inventory restored successfully after void')
-    } catch (error) {
-      console.error('Error restoring inventory after void:', error)
-    }
-  },
-
-  restoreInventoryAfterRefund: async (items: RefundItem[]) => {
-    try {
-      // For refunds, we need to add the refunded quantity back to stock
-      for (const item of items) {
-        await stockApi.updateStock({
-          productId: item.productId,
-          quantity: item.quantity,
-          type: 'RETURN',
-          reason: 'Product refunded'
-        })
-      }
-
-      console.log('Inventory restored successfully after refund')
-    } catch (error) {
-      console.error('Error restoring inventory after refund:', error)
-    }
-  }
 }))

@@ -1,11 +1,11 @@
 import { Router } from 'express'
 import { ServiceManagementController, serviceManagementValidation } from '../controllers/serviceManagementController'
-import { authenticateToken } from '../middleware/auth'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
 // Apply authentication middleware to all routes
-router.use(authenticateToken)
+router.use(requireAuth)
 
 /**
  * Service Type Management Routes

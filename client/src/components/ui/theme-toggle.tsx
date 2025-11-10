@@ -1,62 +1,41 @@
-/**
- * Theme Toggle Component
- * Provides UI for switching between light, dark, and system themes
- */
-
-import React from 'react';
-import { Moon, Sun, Monitor } from 'lucide-react';
-import { Button } from './button';
-import { useTheme } from './theme-provider';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from './dropdown-menu';
+import React, { useState } from 'react'
+import { Moon, Sun, Monitor } from 'lucide-react'
+import { useTheme } from './theme-provider'
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme()
+  const [isOpen, setIsOpen] = useState(false)
+
+  const toggleTheme = () => {
+    if (theme === 'light') {
+      setTheme('dark')
+    } else if (theme === 'dark') {
+      setTheme('system')
+    } else {
+      setTheme('light')
+    }
+  }
+
+  const getIcon = () => {
+    switch (theme) {
+      case 'light':
+        return <Sun className="h-4 w-4" />
+      case 'dark':
+        return <Moon className="h-4 w-4" />
+      default:
+        return <Monitor className="h-4 w-4" />
+    }
+  }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-9 w-9"
-          aria-label="Toggle theme"
-        >
-          <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">Toggle theme</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[140px]">
-        <DropdownMenuItem
-          onClick={() => setTheme('light')}
-          className="cursor-pointer"
-        >
-          <Sun className="mr-2 h-4 w-4" />
-          <span>Light</span>
-          {theme === 'light' && <span className="ml-auto">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => setTheme('dark')}
-          className="cursor-pointer"
-        >
-          <Moon className="mr-2 h-4 w-4" />
-          <span>Dark</span>
-          {theme === 'dark' && <span className="ml-auto">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => setTheme('system')}
-          className="cursor-pointer"
-        >
-          <Monitor className="mr-2 h-4 w-4" />
-          <span>System</span>
-          {theme === 'system' && <span className="ml-auto">✓</span>}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+    <div className="relative">
+      <button
+        onClick={toggleTheme}
+        className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-all duration-200"
+        title={`Current theme: ${theme}`}
+      >
+        {getIcon()}
+      </button>
+    </div>
+  )
 }

@@ -27,7 +27,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     this.setState({ error, errorInfo })
     
     // Log error to console in development
-    if (process.env.NODE_ENV === 'development') {
+    if ((import.meta as any).env?.DEV) {
       console.error('ErrorBoundary caught an error:', error, errorInfo)
     }
 
@@ -63,34 +63,36 @@ function DefaultErrorFallback({ error, retry }: ErrorFallbackProps) {
   return (
     <div className="min-h-[400px] flex items-center justify-center p-6">
       <div className="text-center max-w-md">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 mb-4">
-          <AlertTriangle className="h-6 w-6 text-red-600" />
+        <div className="mx-auto h-16 w-16 bg-gradient-to-br from-red-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-luxury mb-6">
+          <AlertTriangle className="h-8 w-8 text-white" />
         </div>
         
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+        <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
           Something went wrong
         </h3>
         
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-gray-600 dark:text-gray-400 mb-6">
           {error?.message || 'An unexpected error occurred. Please try again.'}
         </p>
         
-        {process.env.NODE_ENV === 'development' && error?.stack && (
-          <details className="text-left mb-4">
-            <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
+        {(import.meta as any).env?.DEV && error?.stack && (
+          <details className="text-left mb-6">
+            <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium">
               Error Details
             </summary>
-            <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-32">
-              {error.stack}
-            </pre>
+            <div className="mt-3 card-elegant p-4 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+              <pre className="text-xs text-red-800 dark:text-red-200 font-mono overflow-auto max-h-32">
+                {error.stack}
+              </pre>
+            </div>
           </details>
         )}
         
         <button
           onClick={retry}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          className="btn-primary-elegant"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className="h-4 w-4 mr-2" />
           Try Again
         </button>
       </div>

@@ -158,7 +158,7 @@ export const subscribeToPushNotifications = async (): Promise<PushSubscription |
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(
-          process.env.VITE_VAPID_PUBLIC_KEY || ''
+          (import.meta as any).env?.VITE_VAPID_PUBLIC_KEY || ''
         ),
       });
     }

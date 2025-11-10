@@ -27,43 +27,41 @@ function App() {
         {!isAuthenticated ? (
           <Login />
         ) : (
-          <>
-            <Layout>
-              <ErrorBoundary>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/pos" element={<POS />} />
-                  <Route path="/products" element={<Products />} />
-                  <Route path="/customers" element={<Customers />} />
-                  <Route path="/suppliers" element={<Suppliers />} />
-                  <Route path="/transactions" element={<Transactions />} />
-                  <Route path="/invoices" element={<Invoices />} />
-                  <Route path="/analytics" element={<Analytics />} />
-                  <Route path="/expenses" element={<Expenses />} />
-                  <Route path="/financial-dashboard" element={<FinancialDashboard />} />
-                  <Route path="/service-management" element={<ServiceManagement />} />
-                  <Route path="/reports" element={<Reports />} />
-                </Routes>
-              </ErrorBoundary>
-            </Layout>
-            <Toaster 
-              position="top-right"
-              toastOptions={{
-                duration: 4000,
-                style: {
-                  background: '#fff',
-                  color: '#374151',
-                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-                  border: '1px solid #E5E7EB',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                },
-              }}
-            />
-          </>
+          <Layout>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/pos" element={<POS />} />
+                <Route path="/products" element={<Products />} />
+                <Route path="/customers" element={<Customers />} />
+                <Route path="/suppliers" element={<Suppliers />} />
+                <Route path="/transactions" element={<Transactions />} />
+                <Route path="/invoices" element={<Invoices />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/expenses" element={<Expenses />} />
+                <Route path="/financial-dashboard" element={<FinancialDashboard />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/service-management" element={<ServiceManagement />} />
+              </Routes>
+            </ErrorBoundary>
+          </Layout>
         )}
+        <Toaster 
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: 'hsl(var(--card))',
+              color: 'hsl(var(--card-foreground))',
+              boxShadow: 'var(--shadow-elegant)',
+              border: '1px solid hsl(var(--border))',
+              borderRadius: '12px',
+              fontSize: '14px',
+              fontWeight: '500',
+            },
+          }}
+        />
       </ThemeProvider>
     </ErrorBoundary>
   )

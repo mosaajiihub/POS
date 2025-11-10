@@ -2,8 +2,16 @@ import express from 'express'
 import { SecurityController } from '../controllers/securityController'
 import { requireAuth, requireAdmin } from '../middleware/auth'
 import { auditSecurity } from '../middleware/auditMiddleware'
+import { handleCSPViolation } from '../middleware/securityHeaders'
 
 const router = express.Router()
+
+/**
+ * @route POST /api/security/csp-report
+ * @desc Handle CSP violation reports
+ * @access Public (no auth required for CSP reports)
+ */
+router.post('/csp-report', handleCSPViolation())
 
 /**
  * @route GET /api/security/status

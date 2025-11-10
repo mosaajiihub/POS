@@ -1,11 +1,11 @@
 import { Router } from 'express'
 import { CustomerController, customerValidation } from '../controllers/customerController'
-import { authenticateToken } from '../middleware/auth'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
 // Apply authentication middleware to all routes
-router.use(authenticateToken)
+router.use(requireAuth)
 
 /**
  * Customer Management Routes

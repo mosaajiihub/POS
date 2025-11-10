@@ -98,6 +98,57 @@ export class SessionManager {
       lastActivity: new Date().toISOString()
     }
     await redisClient.setEx(sessionKey, this.SESSION_EXPIRY, JSON.stringify(updatedSession))
+    return true
+  }
+
+  static async getUserSessions(userId: string): Promise<Record<string, any>> {
+    const userSessionsKey = `${this.USER_SESSIONS_PREFIX}${userId}`
+    const sessionIds = await redisClient.sMembers(userSessionsKey)
+    const sessions: Record<string, any> = {}
+    
+    for (const sessionId of sessionIds) {
+      const session = await this.getSession(sessionId)
+      if (session) {
+        sessions[sessionId] = session
+      } else {
+        // Clean up invalid session ID
+        await redisClient.sRem(userSessionsKey, sessionId)
+      }
+    }
+    
+    return sessions
+  }
+
+  static async exists(key: string): Promise<boolean> {
+    const result = await redisClient.exists(key)
+    return result === 1
+  }
+
+  static async getTTL(key: string): Promise<number> {
+    return await redisClient.ttl(key)
+  }
+
+  static async setWithExpiry(key: string, value: string, expirySeconds: number): Promise<void> {
+    await redisClient.setEx(key, expirySeconds, value)
+  }
+
+  static async getCounter(key: string): Promise<number> {
+    const value = await redisClient.get(key)
+    return value ? parseInt(value) : 0
+  }
+
+  static async incrementCounter(key: string, expirySeconds: number): Promise<number> {
+    const result = await redisClient.incr(key)
+    if (result === 1) {
+      // First increment, set expiry
+      await redisClient.expire(key, expirySeconds)
+    }
+    return result
+  }
+
+  static async delete(key: string): Promise<boolean> {
+    const result = await redisClient.del(key)
+    return result === 1
     
     return true
   }

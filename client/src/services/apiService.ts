@@ -25,7 +25,8 @@ class ApiService {
   private defaultHeaders: Record<string, string>
 
   constructor() {
-    this.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api'
+    // Use Vite's environment variables instead of process.env
+    this.baseURL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000/api'
     this.defaultHeaders = {
       'Content-Type': 'application/json'
     }

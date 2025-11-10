@@ -2,6 +2,9 @@ import { prisma } from '../config/database'
 import { logger } from '../utils/logger'
 import { AuditService } from './auditService'
 import { SessionManager } from '../config/redis'
+import { SecurityAlertingService } from './securityAlertingService'
+import { IncidentResponseService, IncidentType } from './incidentResponseService'
+import { AlertSeverity, AlertType, getSecurityMonitoringConfig } from '../config/securityMonitoring'
 
 export interface SecurityEvent {
   id: string
@@ -82,9 +85,11 @@ export enum SecuritySeverity {
  * Handles security event monitoring, alerting, and session management
  */
 export class SecurityMonitoringService {
+  private static config = getSecurityMonitoringConfig()
   private static readonly MAX_FAILED_ATTEMPTS = 5
   private static readonly LOCKOUT_DURATION = 15 * 60 * 1000 // 15 minutes
   private static readonly SUSPICIOUS_ACTIVITY_THRESHOLD = 10
+  private static monitoringInterval: NodeJS.Timeout | null = null
 
   /**
    * Record a failed login attempt
@@ -130,12 +135,30 @@ export class SecurityMonitoringService {
           }
         })
 
-        // Create security alert
-        await this.createSecurityAlert({
-          type: 'BRUTE_FORCE_DETECTED',
+        // Create security alert using new alerting service
+        await SecurityAlertingService.createAlert({
+          type: AlertType.BRUTE_FORCE_DETECTED,
+          severity: AlertSeverity.HIGH,
+          title: 'Brute Force Attack Detected',
           message: `Multiple failed login attempts detected for ${email} from IP ${ipAddress}`,
-          severity: SecuritySeverity.HIGH
+          details: {
+            email,
+            ipAddress,
+            attemptCount: attempts + 1,
+            timeWindow: '15 minutes'
+          },
+          affectedResources: [email]
         })
+
+        // Auto-block IP if configured
+        if (this.config.incidentResponse.autoBlock.enabled) {
+          await this.blockIPAddress(
+            ipAddress,
+            `Automatic block: ${attempts + 1} failed login attempts`,
+            'system',
+            this.config.incidentResponse.autoBlock.duration * 60 * 1000
+          )
+        }
       }
 
       logger.warn(`Failed login attempt: ${email} from ${ipAddress} (attempt ${attempts + 1})`)
@@ -522,4 +545,156 @@ export class SecurityMonitoringService {
     // In a real implementation, delete from Redis
     // await redis.del(key)
   }
+
+  /**
+   * Start security monitoring
+   */
+  static startMonitoring(): void {
+    if (this.monitoringInterval) {
+      logger.warn('Security monitoring already running')
+      return
+    }
+
+    logger.info('Starting security monitoring service')
+
+    // Start periodic monitoring tasks
+    this.monitoringInterval = setInterval(async () => {
+      try {
+        await this.performMonitoringTasks()
+      } catch (error) {
+        logger.error('Error in monitoring tasks:', error)
+      }
+    }, this.config.intervals.metricsCollection)
+
+    // Perform initial monitoring
+    this.performMonitoringTasks().catch(error => {
+      logger.error('Error in initial monitoring:', error)
+    })
+  }
+
+  /**
+   * Stop security monitoring
+   */
+  static stopMonitoring(): void {
+    if (this.monitoringInterval) {
+      clearInterval(this.monitoringInterval)
+      this.monitoringInterval = null
+      logger.info('Security monitoring service stopped')
+    }
+  }
+
+  /**
+   * Perform periodic monitoring tasks
+   */
+  private static async performMonitoringTasks(): Promise<void> {
+    try {
+      // Check for suspicious patterns
+      await this.checkSuspiciousPatterns()
+
+      // Clean up old data
+      await this.cleanupOldData()
+
+      // Generate periodic reports
+      await this.generatePeriodicReports()
+
+      logger.debug('Monitoring tasks completed successfully')
+    } catch (error) {
+      logger.error('Error performing monitoring tasks:', error)
+    }
+  }
+
+  /**
+   * Check for suspicious patterns
+   */
+  private static async checkSuspiciousPatterns(): Promise<void> {
+    try {
+      const recentEvents = await prisma.auditLog.findMany({
+        where: {
+          createdAt: {
+            gte: new Date(Date.now() - 60 * 60 * 1000) // Last hour
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      })
+
+      // Check for unusual activity patterns
+      const ipCounts = new Map<string, number>()
+      const userCounts = new Map<string, number>()
+
+      for (const event of recentEvents) {
+        if (event.ipAddress) {
+          ipCounts.set(event.ipAddress, (ipCounts.get(event.ipAddress) || 0) + 1)
+        }
+        if (event.userId) {
+          userCounts.set(event.userId, (userCounts.get(event.userId) || 0) + 1)
+        }
+      }
+
+      // Alert on suspicious IP activity
+      for (const [ip, count] of ipCounts.entries()) {
+        if (count > this.SUSPICIOUS_ACTIVITY_THRESHOLD) {
+          await SecurityAlertingService.createAlert({
+            type: AlertType.UNUSUAL_ACTIVITY,
+            severity: AlertSeverity.MEDIUM,
+            title: 'Unusual Activity from IP Address',
+            message: `IP address ${ip} has generated ${count} events in the last hour`,
+            details: { ipAddress: ip, eventCount: count, timeWindow: '1 hour' },
+            affectedResources: [ip]
+          })
+        }
+      }
+    } catch (error) {
+      logger.error('Error checking suspicious patterns:', error)
+    }
+  }
+
+  /**
+   * Clean up old data
+   */
+  private static async cleanupOldData(): Promise<void> {
+    try {
+      const { retention } = this.config
+
+      // Clean up old security events
+      const securityEventsCutoff = new Date(Date.now() - retention.securityEvents * 24 * 60 * 60 * 1000)
+      await prisma.auditLog.deleteMany({
+        where: {
+          action: { startsWith: 'SECURITY_EVENT_' },
+          createdAt: { lt: securityEventsCutoff }
+        }
+      })
+
+      // Clean up old alerts
+      SecurityAlertingService.clearOldAlerts(retention.alerts)
+
+      logger.debug('Old data cleanup completed')
+    } catch (error) {
+      logger.error('Error cleaning up old data:', error)
+    }
+  }
+
+  /**
+   * Generate periodic reports
+   */
+  private static async generatePeriodicReports(): Promise<void> {
+    try {
+      // Generate daily security summary
+      const metrics = await this.getSecurityMetrics(1)
+
+      if (metrics.securityAlerts > 0 || metrics.totalFailedLogins > 10) {
+        logger.info('Daily security summary', {
+          failedLogins: metrics.totalFailedLogins,
+          alerts: metrics.securityAlerts,
+          activeSessions: metrics.activeSessions
+        })
+      }
+    } catch (error) {
+      logger.error('Error generating periodic reports:', error)
+    }
+  }
+}
+
+// Initialize monitoring on service load
+if (process.env.NODE_ENV !== 'test') {
+  SecurityMonitoringService.startMonitoring()
 }

@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { PaymentGatewayController, paymentGatewayValidation } from '../controllers/paymentGatewayController'
-import { authenticateToken } from '../middleware/auth'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
@@ -11,7 +11,7 @@ const router = Router()
 // POST /api/payment-gateway/invoices/:invoiceId/payment-links - Create payment link for invoice
 router.post(
   '/invoices/:invoiceId/payment-links',
-  authenticateToken,
+  requireAuth,
   paymentGatewayValidation.createPaymentLink,
   PaymentGatewayController.createPaymentLink
 )
@@ -19,7 +19,7 @@ router.post(
 // GET /api/payment-gateway/payment-links/:linkId/status - Get payment link status
 router.get(
   '/payment-links/:linkId/status',
-  authenticateToken,
+  requireAuth,
   paymentGatewayValidation.getPaymentLinkStatus,
   PaymentGatewayController.getPaymentLinkStatus
 )
@@ -27,7 +27,7 @@ router.get(
 // POST /api/payment-gateway/payment-links/:linkId/cancel - Cancel payment link
 router.post(
   '/payment-links/:linkId/cancel',
-  authenticateToken,
+  requireAuth,
   paymentGatewayValidation.cancelPaymentLink,
   PaymentGatewayController.cancelPaymentLink
 )
